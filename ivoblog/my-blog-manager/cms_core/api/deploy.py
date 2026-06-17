@@ -255,3 +255,164 @@ async def sync_source_to_vercel(request: Request):
 
     except Exception as e:
         return {"success": False, "message": f"源码同步引擎异常: {str(e)}"}
+
+
+# ================================================================
+# 🖥️ C 线：一键同步到自建云服务器 (Docker 部署)
+# ================================================================
+
+VPS_CONFIG_FILE = os.path.join(PROJECT_ROOT, "data", "vps_config.json")
+
+SYNC_CONTENT_DIRS = ["posts", "chatters", "moments"]
+SYNC_CONTENT_FILES = [
+    "data/albums.ts", "data/friends.ts", "data/projects.ts",
+    "siteConfig.ts", "app/about/about.md",
+]
+SYNC_UPLOADS = True  # public/uploads/
+
+
+def _read_vps_config() -> dict:
+    if os.path.exists(VPS_CONFIG_FILE):
+        try:
+            with open(VPS_CONFIG_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except:
+            pass
+    return {
+        "serverIp": "",
+        "serverUser": "root",
+        "serverPort": "22",
+        "remoteProjectPath": "/opt/ivoblog",
+        "autoRestart": True,
+    }
+
+
+@router.get("/vps/config")
+async def get_vps_config():
+    return {"success": True, **(_read_vps_config())}
+
+
+@router.post("/vps/config")
+async def save_vps_config(request: Request):
+    try:
+        data = await request.json()
+        os.makedirs(os.path.dirname(VPS_CONFIG_FILE), exist_ok=True)
+        atomic_write_json(VPS_CONFIG_FILE, data)
+        return {"success": True, "message": "VPS 配置已保存！"}
+    except Exception as e:
+        return {"success": False, "message": f"保存失败: {str(e)}"}
+
+
+@router.post("/vps/deploy")
+async def deploy_to_vps(request: Request):
+    """一键将管理器内容同步到云服务器 Docker 博客"""
+    try:
+        payload = await request.json()
+        blog_path = payload.get("blogPath", "").strip()
+        vps_config = payload.get("vpsConfig", {})
+
+        server_ip = vps_config.get("serverIp", "").strip()
+        server_user = vps_config.get("serverUser", "root").strip()
+        server_port = vps_config.get("serverPort", "22").strip()
+        remote_path = vps_config.get("remoteProjectPath", "/opt/ivoblog").strip()
+        auto_restart = vps_config.get("autoRestart", True)
+
+        if not server_ip:
+            return {"success": False, "message": "VPS IP 地址未配置！"}
+
+        if not blog_path or not os.path.exists(blog_path):
+            return {"success": False, "message": "本地 Blog 路径不存在！"}
+
+        # Step 0: First sync manager content to local blog directory
+        import shutil
+        for dirname in SYNC_CONTENT_DIRS:
+            src_dir = os.path.join(PROJECT_ROOT, dirname)
+            dst_dir = os.path.join(blog_path, dirname)
+            if os.path.exists(src_dir):
+                if os.path.exists(dst_dir):
+                    shutil.rmtree(dst_dir)
+                shutil.copytree(src_dir, dst_dir)
+        for rel_path in SYNC_CONTENT_FILES:
+            src_file = os.path.join(PROJECT_ROOT, rel_path.replace("/", os.sep))
+            dst_file = os.path.join(blog_path, rel_path.replace("/", os.sep))
+            if os.path.exists(src_file):
+                os.makedirs(os.path.dirname(dst_file), exist_ok=True)
+                shutil.copy2(src_file, dst_file)
+        # Also sync public/uploads/
+        src_uploads = os.path.join(PROJECT_ROOT, "public", "uploads")
+        dst_uploads = os.path.join(blog_path, "public", "uploads")
+        if os.path.exists(src_uploads):
+            os.makedirs(dst_uploads, exist_ok=True)
+            for item in os.listdir(src_uploads):
+                s = os.path.join(src_uploads, item)
+                d = os.path.join(dst_uploads, item)
+                if os.path.isdir(s):
+                    if os.path.exists(d):
+                        shutil.rmtree(d)
+                    shutil.copytree(s, d)
+                else:
+                    shutil.copy2(s, d)
+
+        ssh_opts = f"-o StrictHostKeyChecking=accept-new -p {server_port}"
+        remote_target = f"{server_user}@{server_ip}:{remote_path}/ivoblog/blog"
+
+        results = ["📦 本地内容已同步到 Blog 目录"]
+        errors = []
+
+        # Step 1: Sync content directories (posts, chatters, moments)
+        for dirname in SYNC_CONTENT_DIRS:
+            local_dir = os.path.join(blog_path, dirname)
+            if not os.path.exists(local_dir):
+                continue
+            local_dir_slash = local_dir.replace("\\", "/")
+            cmd = ["scp", ssh_opts, "-r", f"{local_dir_slash}/", f"{remote_target}/{dirname}/"]
+            proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
+            if proc.returncode == 0:
+                results.append(f"✅ {dirname}/ 同步完成")
+            else:
+                errors.append(f"❌ {dirname}/ 失败: {proc.stderr[-200:]}")
+
+        # Step 2: Sync individual config/data files
+        for rel_path in SYNC_CONTENT_FILES:
+            local_file = os.path.join(blog_path, rel_path.replace("/", os.sep))
+            if not os.path.exists(local_file):
+                continue
+            remote_dir_rel = os.path.dirname(rel_path).replace("\\", "/")
+            local_file_fixed = local_file.replace("\\", "/")
+            cmd = [
+                "scp", ssh_opts, local_file_fixed,
+                f"{remote_target}/{remote_dir_rel}/" if remote_dir_rel else remote_target
+            ]
+            proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
+            if proc.returncode == 0:
+                results.append(f"✅ {rel_path} 同步完成")
+            else:
+                errors.append(f"❌ {rel_path} 失败: {proc.stderr[-200:]}")
+
+        # Step 3: Sync public/uploads/ if it exists
+        local_uploads = os.path.join(blog_path, "public", "uploads")
+        if SYNC_UPLOADS and os.path.exists(local_uploads):
+            local_uploads_fixed = local_uploads.replace("\\", "/")
+            cmd = ["scp", ssh_opts, "-r", f"{local_uploads_fixed}/", f"{remote_target}/public/uploads/"]
+            proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
+            if proc.returncode == 0:
+                results.append("✅ public/uploads/ 同步完成")
+            else:
+                errors.append(f"❌ uploads/ 失败: {proc.stderr[-200:]}")
+
+        # Step 4: Restart blog container
+        if auto_restart:
+            restart_cmd = f"cd {remote_path}/deploy && docker compose restart blog"
+            ssh_cmd = ["ssh", ssh_opts, f"{server_user}@{server_ip}", restart_cmd]
+            proc = subprocess.run(ssh_cmd, capture_output=True, text=True, encoding="utf-8")
+            if proc.returncode == 0:
+                results.append("🔄 博客容器已重启，内容已生效！")
+            else:
+                errors.append(f"⚠️ 重启失败: {proc.stderr[-200:]}")
+
+        success = len(errors) == 0
+        summary = "\n".join(results + errors)
+        return {"success": success, "message": summary}
+
+    except Exception as e:
+        return {"success": False, "message": f"VPS 部署异常: {str(e)}"}
