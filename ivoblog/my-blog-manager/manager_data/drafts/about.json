@@ -1,0 +1,12 @@
+{
+  "id": "about",
+  "type": "about",
+  "title": "关于我",
+  "description": "",
+  "content": "<p>个人简介</p><p>你好，我是 Vladileno。</p><p>专注于<strong>人工智能与软件工程</strong>的交叉应用。</p><p><strong>💻 软件工程能力</strong></p><ul><li><p><strong>后端开发:</strong> 使用 <strong>Spring Boot</strong> 框架构建服务端架构，能够处理复杂的数据逻辑与计算任务调度。</p></li><li><p><strong>前端开发:</strong> 熟练掌握 <strong>Vue.js</strong> 与 <strong>React</strong> 框架，为复杂科学数据的可视化与交互提供流畅的体验。</p></li></ul><p><strong>欢迎各位朋友联系交流~</strong></p>",
+  "cover": "/uploads/images/_20251225232527_213_2-0d4cd615c3.jpg",
+  "tags": [],
+  "mood": "",
+  "date": "2026-03-31",
+  "lastModified": 1781423916206
+}

@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+
+# Next.js build output
+.next/
+out/
+build/
+next-env.d.ts
+*.tsbuildinfo
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Logs and caches
+logs/
+*.log
+*.err
+.npm-cache/
+.music-cache.json
+.pytest_cache/
+__pycache__/
+*.py[cod]
+
+# Local platform files
+.DS_Store
+Thumbs.db
+
+# Deployment and local manager state
+.vercel/
+ivoblog/my-blog-manager/data/deploy_config.json
+ivoblog/my-blog-manager/window_config.json
+ivoblog/my-blog-manager/*.tmp
+ivoblog/my-blog-manager/.siteConfig.ts.*.tmp

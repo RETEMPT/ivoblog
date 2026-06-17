@@ -1,0 +1,108 @@
+"use client";
+
+import { useEffect, useRef } from "react";
+import { usePathname } from "next/navigation";
+import "gitalk/dist/gitalk.css";
+import Gitalk from "gitalk";
+import { siteConfig } from "../siteConfig";
+
+export default function Comments() {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const pathname = usePathname();
+
+  const hasGitalkConfig =
+    siteConfig.gitalkConfig.clientID &&
+    siteConfig.gitalkConfig.clientSecret &&
+    siteConfig.gitalkConfig.repo &&
+    siteConfig.gitalkConfig.owner;
+
+  useEffect(() => {
+    if (!containerRef.current || !hasGitalkConfig) return;
+
+    containerRef.current.innerHTML = "";
+
+    const gitalk = new Gitalk({
+      clientID: siteConfig.gitalkConfig.clientID,
+      clientSecret: siteConfig.gitalkConfig.clientSecret,
+      repo: siteConfig.gitalkConfig.repo,
+      owner: siteConfig.gitalkConfig.owner,
+      admin: siteConfig.gitalkConfig.admin,
+      proxy: "/api/github",
+      id: (pathname.replace(/\/$/, "") || "/").substring(0, 49),
+      distractionFreeMode: false,
+    });
+
+    gitalk.render(containerRef.current);
+
+    const url = new URL(window.location.href);
+    if (url.searchParams.has("code")) {
+      url.searchParams.delete("code");
+      window.history.replaceState({}, document.title, url.toString());
+    }
+  }, [pathname, hasGitalkConfig]);
+
+  return (
+    <div className="w-full mt-16 relative">
+      <div className="absolute -top-10 left-1/2 -translate-x-1/2 w-3/4 h-32 bg-indigo-500/10 dark:bg-indigo-500/20 blur-3xl rounded-full pointer-events-none z-0" />
+      {hasGitalkConfig ? (
+        <div ref={containerRef} className="relative z-10 custom-gitalk-glass pt-6 border-t border-slate-200/50 dark:border-slate-700/50" />
+      ) : (
+        <p className="relative z-10 text-center text-sm text-slate-400 dark:text-slate-500 py-8 pt-6 border-t border-slate-200/50 dark:border-slate-700/50">
+          Comments not configured yet.
+        </p>
+      )}
+
+      <style jsx global>{`
+        .custom-gitalk-glass .gt-container .gt-header-textarea {
+          background: rgba(255, 255, 255, 0.1) !important;
+          backdrop-filter: blur(12px) !important;
+          border: 1px solid rgba(255, 255, 255, 0.2) !important;
+          border-radius: 16px !important;
+          color: inherit !important;
+          transition: all 0.3s ease;
+        }
+        .custom-gitalk-glass .gt-container .gt-header-textarea:focus {
+          background: rgba(255, 255, 255, 0.2) !important;
+          border-color: #6366f1 !important;
+          box-shadow: 0 0 15px rgba(99, 102, 241, 0.3) !important;
+        }
+        .custom-gitalk-glass .gt-container .gt-header-preview {
+          background: rgba(255, 255, 255, 0.1) !important;
+          backdrop-filter: blur(12px) !important;
+          border-radius: 16px !important;
+        }
+        .custom-gitalk-glass .gt-container .gt-btn {
+          background: #6366f1 !important;
+          border: none !important;
+          border-radius: 12px !important;
+          box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4) !important;
+          transition: transform 0.2s, box-shadow 0.2s;
+          color: white !important;
+        }
+        .custom-gitalk-glass .gt-container .gt-btn:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 6px 20px rgba(99, 102, 241, 0.6) !important;
+        }
+        .custom-gitalk-glass .gt-container .gt-comment-content {
+          background: rgba(255, 255, 255, 0.05) !important;
+          backdrop-filter: blur(8px) !important;
+          border: 1px solid rgba(255, 255, 255, 0.1) !important;
+          border-radius: 16px !important;
+        }
+        .custom-gitalk-glass .gt-container .gt-comment-admin .gt-comment-content {
+          border-color: rgba(99, 102, 241, 0.3) !important;
+        }
+        .custom-gitalk-glass .gt-container .gt-avatar {
+          border-radius: 50% !important;
+          overflow: hidden;
+        }
+        .custom-gitalk-glass .gt-container .gt-comment-body {
+          color: inherit !important;
+        }
+        .custom-gitalk-glass .gt-container a {
+          color: #6366f1 !important;
+        }
+      `}</style>
+    </div>
+  );
+}

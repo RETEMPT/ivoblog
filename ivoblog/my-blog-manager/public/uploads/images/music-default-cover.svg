@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 400 400">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1e1b4b"/>
+      <stop offset="50%" style="stop-color:#312e81"/>
+      <stop offset="100%" style="stop-color:#1e1b4b"/>
+    </linearGradient>
+    <linearGradient id="note" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#818cf8"/>
+      <stop offset="100%" style="stop-color:#6366f1"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="400" height="400" fill="url(#bg)"/>
+
+  <!-- Subtle vinyl rings -->
+  <circle cx="200" cy="200" r="160" fill="none" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>
+  <circle cx="200" cy="200" r="120" fill="none" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>
+  <circle cx="200" cy="200" r="80" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>
+  <circle cx="200" cy="200" r="40" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+
+  <!-- Music note (eighth note) -->
+  <g transform="translate(175, 100)" fill="url(#note)">
+    <!-- Note head -->
+    <ellipse cx="0" cy="160" rx="28" ry="22" transform="rotate(-20, 0, 160)"/>
+    <!-- Stem -->
+    <rect x="24" y="10" width="5" height="150" rx="2.5"/>
+    <!-- Flag -->
+    <path d="M29 18 Q60 35 55 80 Q58 55 32 30Z"/>
+  </g>
+
+  <!-- Second smaller note -->
+  <g transform="translate(225, 115)" fill="url(#note)" opacity="0.5">
+    <ellipse cx="0" cy="130" rx="20" ry="16" transform="rotate(-20, 0, 130)"/>
+    <rect x="18" y="15" width="4" height="115" rx="2"/>
+    <path d="M22 22 Q48 38 44 72 Q46 55 26 34Z"/>
+  </g>
+</svg>

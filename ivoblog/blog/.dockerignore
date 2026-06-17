@@ -1,0 +1,13 @@
+node_modules
+.git
+.gitignore
+.next
+.env.local
+.env.production
+*.md
+README.md
+DEPLOYMENT_GUIDE.md
+AGENTS.md
+CLAUDE.md
+.npm
+.cache

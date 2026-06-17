@@ -1,0 +1,589 @@
+@import "tailwindcss";
+
+/* 1. 声明暗黑模式变体 */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* 2. 基础环境与性能优化 */
+@layer base {
+  :root {
+    --font-serif: "Source Han Serif SC", "Noto Serif SC", "Songti SC", "SimSun", serif;
+    --uupm-ink: #09090b;
+    --uupm-paper: #fafafa;
+    --uupm-primary: #18181b;
+    --uupm-accent: #ec4899;
+    --uupm-cyan: #22c55e;
+    --uupm-rose: #f43f5e;
+    --uupm-border: rgba(24, 24, 27, 0.12);
+    --uupm-surface: rgba(255, 255, 255, 0.62);
+    --uupm-shadow: 0 22px 70px rgba(15, 23, 42, 0.13);
+    --uupm-shadow-hover: 0 30px 90px rgba(15, 23, 42, 0.2);
+    --uupm-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  html {
+    scroll-behavior: smooth;
+    scroll-padding-top: 7rem;
+  }
+
+  body {
+    font-family: var(--font-serif);
+    @apply transition-colors duration-500 text-slate-900 bg-slate-50;
+    background:
+      repeating-linear-gradient(135deg, rgba(236, 72, 153, 0.032) 0 1px, transparent 1px 22px),
+      linear-gradient(110deg, rgba(255, 255, 255, 0.78) 0 18%, transparent 18% 100%),
+      linear-gradient(180deg, #f8fafc 0%, #f1f5f9 42%, #fafafa 100%);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  .dark body {
+    @apply text-slate-100 bg-slate-950;
+    background:
+      repeating-linear-gradient(135deg, rgba(125, 211, 252, 0.04) 0 1px, transparent 1px 24px),
+      linear-gradient(110deg, rgba(37, 99, 235, 0.08) 0 16%, transparent 16% 100%),
+      linear-gradient(180deg, #020617 0%, #09090b 50%, #111827 100%);
+  }
+
+  * {
+    outline-color: var(--uupm-accent);
+  }
+
+  a, button, input, [role="button"] {
+    touch-action: manipulation;
+  }
+
+  a:focus-visible,
+  button:focus-visible,
+  input:focus-visible,
+  [role="button"]:focus-visible {
+    outline: 3px solid rgba(236, 72, 153, 0.36);
+    outline-offset: 3px;
+  }
+
+  h1, h2, h3, h4 {
+    font-weight: 900;
+    letter-spacing: 0;
+  }
+
+  .dark .prose {
+    --tw-prose-body: var(--color-slate-200);
+    --tw-prose-headings: var(--color-white);
+    --tw-prose-links: var(--color-indigo-400);
+  }
+
+  /* 只对明确标记的毛玻璃卡片启用，避免全局覆盖导致内容区模糊 */
+  .glass-panel {
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+  }
+
+  .group:hover img {
+    will-change: transform;
+  }
+}
+
+@keyframes swayWildGrass {
+  0% { transform: rotate(-5deg); }
+  100% { transform: rotate(15deg); }
+}
+
+@layer components {
+  .uupm-stage {
+    position: relative;
+    isolation: isolate;
+  }
+
+  .uupm-stage::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-image:
+      linear-gradient(rgba(15, 23, 42, 0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(15, 23, 42, 0.035) 1px, transparent 1px);
+    background-size: 64px 64px;
+    mask-image: radial-gradient(circle at 50% 25%, black, transparent 72%);
+    -webkit-mask-image: radial-gradient(circle at 50% 25%, black, transparent 72%);
+  }
+
+  .dark .uupm-stage::before {
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+  }
+
+  .uupm-card {
+    position: relative;
+    background:
+      linear-gradient(135deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.4)),
+      var(--uupm-surface);
+    border: 1px solid rgba(255, 255, 255, 0.58);
+    box-shadow: var(--uupm-shadow);
+    backdrop-filter: blur(12px) saturate(1.12);
+    -webkit-backdrop-filter: blur(12px) saturate(1.12);
+  }
+
+  .uupm-card::before {
+    content: "";
+    position: absolute;
+    inset: 1px;
+    border-radius: inherit;
+    pointer-events: none;
+    background:
+      linear-gradient(135deg, rgba(255, 255, 255, 0.5), transparent 34%),
+      linear-gradient(70deg, transparent 0 58%, rgba(255, 255, 255, 0.3) 64%, transparent 76%);
+    opacity: 0.72;
+  }
+
+  .dark .uupm-card {
+    background:
+      linear-gradient(135deg, rgba(15, 23, 42, 0.78), rgba(15, 23, 42, 0.46)),
+      rgba(2, 6, 23, 0.42);
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .uupm-anime-frame {
+    box-shadow:
+      var(--uupm-shadow),
+      0 0 0 1px rgba(255, 255, 255, 0.42) inset,
+      7px 7px 0 rgba(236, 72, 153, 0.1);
+  }
+
+  .dark .uupm-anime-frame {
+    box-shadow:
+      var(--uupm-shadow),
+      0 0 0 1px rgba(255, 255, 255, 0.09) inset,
+      7px 7px 0 rgba(56, 189, 248, 0.08);
+  }
+
+  .uupm-halftone {
+    position: relative;
+  }
+
+  .uupm-halftone::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background-image: radial-gradient(rgba(236, 72, 153, 0.14) 1px, transparent 1.6px);
+    background-size: 12px 12px;
+    mask-image: linear-gradient(135deg, transparent 0%, black 68%, black 100%);
+    -webkit-mask-image: linear-gradient(135deg, transparent 0%, black 68%, black 100%);
+    opacity: 0.34;
+  }
+
+  .dark .uupm-halftone::before {
+    background-image: radial-gradient(rgba(125, 211, 252, 0.18) 1px, transparent 1.6px);
+    opacity: 0.42;
+  }
+
+  .uupm-anime-glow {
+    text-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.24),
+      0 0 18px rgba(236, 72, 153, 0.22);
+  }
+
+  .uupm-speed-lines {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      repeating-linear-gradient(
+        115deg,
+        transparent 0 20px,
+        rgba(255, 255, 255, 0.18) 21px,
+        transparent 22px 42px
+      );
+    opacity: 0;
+    transform: translateX(-18px);
+    transition: opacity 260ms var(--uupm-ease), transform 320ms var(--uupm-ease);
+  }
+
+  .group:hover .uupm-speed-lines {
+    opacity: 0.28;
+    transform: translateX(0);
+  }
+
+  .uupm-screen-dots {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image: radial-gradient(rgba(255, 255, 255, 0.92) 0 1px, transparent 2px);
+    background-size: 15px 15px;
+    opacity: 0.22;
+  }
+
+  .uupm-sparkle-field {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    overflow: hidden;
+  }
+
+  .uupm-sparkle-field i {
+    position: absolute;
+    width: 6px;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.86);
+    clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%);
+    filter: drop-shadow(0 0 8px rgba(125, 211, 252, 0.75));
+    animation: uupm-twinkle 2.6s ease-in-out infinite;
+    animation-play-state: paused;
+  }
+
+  .group:hover .uupm-sparkle-field i {
+    animation-play-state: running;
+  }
+
+  .uupm-lift {
+    transform: translateZ(0);
+    transition:
+      transform 240ms var(--uupm-ease),
+      box-shadow 240ms var(--uupm-ease),
+      border-color 240ms var(--uupm-ease),
+      background-color 240ms var(--uupm-ease);
+    will-change: transform;
+  }
+
+  .uupm-lift:not(:hover) {
+    will-change: auto;
+  }
+
+  .uupm-lift:hover {
+    transform: translate3d(0, -4px, 0) scale(1.018);
+    box-shadow: var(--uupm-shadow-hover);
+    border-color: rgba(236, 72, 153, 0.28);
+  }
+
+  .uupm-lift:active {
+    transform: translate3d(0, -1px, 0) scale(0.995);
+  }
+
+  .uupm-sheen {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .uupm-sheen::after {
+    content: "";
+    position: absolute;
+    inset: -60% auto auto -35%;
+    width: 45%;
+    height: 220%;
+    transform: rotate(18deg) translateX(-120%);
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.28), transparent);
+    transition: transform 300ms var(--uupm-ease);
+    pointer-events: none;
+  }
+
+  .uupm-sheen:hover::after {
+    transform: rotate(18deg) translateX(380%);
+  }
+
+  .uupm-enter {
+    animation: uupm-rise 260ms var(--uupm-ease) both;
+  }
+
+  .uupm-enter-delay-1 { animation-delay: 60ms; }
+  .uupm-enter-delay-2 { animation-delay: 110ms; }
+  .uupm-enter-delay-3 { animation-delay: 160ms; }
+
+  .uupm-story-flow {
+    scroll-snap-type: y proximity;
+    scroll-padding-top: 7rem;
+  }
+
+  html:has(.uupm-story-flow) {
+    scroll-snap-type: y proximity;
+  }
+
+  .uupm-flow-section {
+    scroll-snap-align: start;
+    scroll-margin-top: 7rem;
+  }
+
+  @supports (content-visibility: auto) {
+    main .uupm-flow-section,
+    main .uupm-card {
+      content-visibility: auto;
+      contain-intrinsic-size: 1px 360px;
+    }
+
+    main .uupm-flow-section:first-child,
+    main .uupm-card:first-child {
+      content-visibility: visible;
+    }
+  }
+
+  .uupm-nav-glass {
+    background: rgba(255, 255, 255, 0.62);
+    border-color: rgba(255, 255, 255, 0.42);
+    box-shadow: 0 16px 50px rgba(15, 23, 42, 0.1);
+  }
+
+  .dark .uupm-nav-glass {
+    background: rgba(2, 6, 23, 0.64);
+    border-color: rgba(255, 255, 255, 0.09);
+  }
+
+  .uupm-kicker {
+    color: var(--uupm-accent);
+    font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.68rem;
+    font-weight: 900;
+    letter-spacing: 0;
+    text-transform: uppercase;
+  }
+
+  .uupm-sticker {
+    display: inline-flex;
+    align-items: center;
+    width: max-content;
+    transform: skewX(-8deg);
+    border: 1px solid rgba(236, 72, 153, 0.18);
+    background: rgba(255, 255, 255, 0.68);
+    box-shadow: 3px 3px 0 rgba(236, 72, 153, 0.1);
+  }
+
+  .uupm-sticker > * {
+    transform: skewX(8deg);
+  }
+
+  .dark .uupm-sticker {
+    border-color: rgba(125, 211, 252, 0.18);
+    background: rgba(15, 23, 42, 0.7);
+    box-shadow: 3px 3px 0 rgba(125, 211, 252, 0.08);
+  }
+}
+
+@keyframes uupm-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 18px, 0) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes uupm-twinkle {
+  0%, 100% {
+    opacity: 0.28;
+    transform: scale(0.72) rotate(0deg);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.12) rotate(45deg);
+  }
+}
+
+/* 3. 音乐播放器进度条样式 */
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: #6366f1;
+  cursor: pointer;
+}
+
+/* 4. 火狐专项优化与布局兜底 */
+@layer base {
+  .glass-panel {
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+  }
+
+  @-moz-document url-prefix() {
+    .glass-panel {
+      backdrop-filter: blur(8px) !important;
+    }
+  }
+
+  html, body {
+    min-height: 100%;
+    margin: 0;
+    padding: 0;
+  }
+}
+
+/* ========================================================
+   5. 全局滚动条美化 (Chrome, Edge, Safari)
+   ======================================================== */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(236, 72, 153, 0.28);
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(236, 72, 153, 0.72);
+}
+
+/* ========================================================
+   6. Firefox 浏览器的兼容写法
+   ======================================================== */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(236, 72, 153, 0.28) transparent;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .duration-700 {
+    transition-duration: 320ms !important;
+  }
+
+  .duration-1000 {
+    transition-duration: 360ms !important;
+  }
+
+  .hover\:scale-\[1\.02\]:hover {
+    transform: scale(1.012) !important;
+  }
+
+  .group-hover\:scale-110:is(:where(.group):hover *) {
+    transform: scale(1.055) !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
+  }
+
+  .uupm-lift,
+  .uupm-lift:hover,
+  .uupm-lift:active {
+    transform: none !important;
+  }
+
+  .uupm-speed-lines,
+  .uupm-sparkle-field {
+    display: none !important;
+  }
+}
+
+html.effects-reduced .uupm-lift,
+html.effects-reduced .uupm-lift:hover,
+html.effects-reduced .uupm-lift:active {
+  transform: none !important;
+  box-shadow: var(--uupm-shadow) !important;
+}
+
+html.effects-reduced-auto .uupm-lift,
+html.effects-reduced-auto .uupm-lift:hover,
+html.effects-reduced-auto .uupm-lift:active {
+  transform: none !important;
+  box-shadow: var(--uupm-shadow) !important;
+}
+
+html.effects-reduced .uupm-speed-lines,
+html.effects-reduced .uupm-sparkle-field,
+html.effects-reduced .uupm-screen-dots {
+  display: none !important;
+}
+
+html.effects-reduced-auto .uupm-speed-lines,
+html.effects-reduced-auto .uupm-sparkle-field,
+html.effects-reduced-auto .uupm-screen-dots {
+  display: none !important;
+}
+
+html.effects-reduced .uupm-sheen::after,
+html.effects-reduced .uupm-halftone::before {
+  opacity: 0 !important;
+  animation: none !important;
+  transition: none !important;
+}
+
+html.effects-reduced-auto .uupm-sheen::after,
+html.effects-reduced-auto .uupm-halftone::before {
+  opacity: 0 !important;
+  animation: none !important;
+  transition: none !important;
+}
+
+html.effects-reduced .group:hover img {
+  transform: none !important;
+}
+
+html.effects-reduced-auto .group:hover img {
+  transform: none !important;
+}
+
+html.effects-reduced *,
+html.effects-reduced *::before,
+html.effects-reduced *::after {
+  scroll-behavior: auto !important;
+}
+
+html.effects-reduced-auto *,
+html.effects-reduced-auto *::before,
+html.effects-reduced-auto *::after {
+  scroll-behavior: auto !important;
+}
+
+/* Manager-only editor and utility polish. */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+.prose ul {
+  list-style-type: disc !important;
+  padding-left: 1.5em !important;
+}
+
+.prose ol {
+  list-style-type: decimal !important;
+  padding-left: 1.5em !important;
+}
+
+.prose ul[data-type="taskList"] {
+  list-style-type: none !important;
+  padding-left: 0 !important;
+}
+
+.prose ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.prose ul[data-type="taskList"] input[type="checkbox"] {
+  margin-top: 0.5rem;
+  cursor: pointer;
+  accent-color: #ec4899;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(236, 72, 153, 0.22);
+  border-radius: 999px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(236, 72, 153, 0.52);
+}

@@ -1,0 +1,153 @@
+"use client";
+
+import { useEffect, useRef } from "react";
+import "gitalk/dist/gitalk.css";
+import Gitalk from "gitalk";
+import { siteConfig } from "../siteConfig";
+
+interface MomentCommentsProps {
+  id: string;
+}
+
+export default function MomentComments({ id }: MomentCommentsProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const hasGitalkConfig =
+    siteConfig.gitalkConfig.clientID &&
+    siteConfig.gitalkConfig.clientSecret &&
+    siteConfig.gitalkConfig.repo &&
+    siteConfig.gitalkConfig.owner;
+
+  useEffect(() => {
+    if (!containerRef.current || !hasGitalkConfig) return;
+
+    containerRef.current.innerHTML = "";
+
+    const gitalk = new Gitalk({
+      clientID: siteConfig.gitalkConfig.clientID,
+      clientSecret: siteConfig.gitalkConfig.clientSecret,
+      repo: siteConfig.gitalkConfig.repo,
+      owner: siteConfig.gitalkConfig.owner,
+      admin: siteConfig.gitalkConfig.admin,
+      proxy: "/api/github",
+      id: id.substring(0, 49),
+      distractionFreeMode: false,
+    });
+
+    gitalk.render(containerRef.current);
+  }, [id, hasGitalkConfig]);
+
+  return (
+    <div className="w-full relative">
+      {hasGitalkConfig ? (
+        <div ref={containerRef} className="moment-gitalk" />
+      ) : (
+        <p className="text-center text-sm text-slate-400 dark:text-slate-500 py-4">
+          Comments not configured yet.
+        </p>
+      )}
+
+      <style jsx global>{`
+        .moment-gitalk .gt-header-controls-tip,
+        .moment-gitalk .gt-svg-svg {
+          display: none !important;
+        }
+        .moment-gitalk .gt-container {
+          padding: 0 !important;
+        }
+        .moment-gitalk .gt-header {
+          margin-bottom: 10px !important;
+        }
+        .moment-gitalk .gt-header-avatar {
+          width: 28px !important;
+          height: 28px !important;
+          margin-top: 4px !important;
+        }
+        .moment-gitalk .gt-header-avatar img {
+          border-radius: 6px !important;
+        }
+        .moment-gitalk .gt-header-comment {
+          margin-left: 40px !important;
+        }
+        .moment-gitalk .gt-header-textarea {
+          padding: 8px 12px !important;
+          min-height: 40px !important;
+          background: rgba(0, 0, 0, 0.03) !important;
+          border: 1px solid transparent !important;
+          border-radius: 8px !important;
+          font-size: 13px !important;
+          transition: all 0.3s ease !important;
+          color: inherit !important;
+        }
+        .moment-gitalk .gt-header-textarea:focus {
+          min-height: 80px !important;
+          background: rgba(255, 255, 255, 0.8) !important;
+          border-color: #6366f1 !important;
+        }
+        .dark .moment-gitalk .gt-header-textarea {
+          background: rgba(255, 255, 255, 0.05) !important;
+        }
+        .dark .moment-gitalk .gt-header-textarea:focus {
+          background: rgba(0, 0, 0, 0.5) !important;
+        }
+        .moment-gitalk .gt-btn {
+          padding: 0.3em 1rem !important;
+          font-size: 12px !important;
+          border-radius: 6px !important;
+          background: #6366f1 !important;
+          border: none !important;
+        }
+        .moment-gitalk .gt-comments {
+          padding-top: 0 !important;
+        }
+        .moment-gitalk .gt-comment {
+          padding: 8px 0 !important;
+          margin: 0 !important;
+          border-top: 1px solid rgba(0, 0, 0, 0.05) !important;
+        }
+        .dark .moment-gitalk .gt-comment {
+          border-top: 1px solid rgba(255, 255, 255, 0.05) !important;
+        }
+        .moment-gitalk .gt-comment:first-child {
+          border-top: none !important;
+        }
+        .moment-gitalk .gt-comment-avatar {
+          width: 24px !important;
+          height: 24px !important;
+        }
+        .moment-gitalk .gt-comment-avatar img {
+          border-radius: 4px !important;
+        }
+        .moment-gitalk .gt-comment-content {
+          margin-left: 34px !important;
+          padding: 0 !important;
+          background: transparent !important;
+          border: none !important;
+          box-shadow: none !important;
+        }
+        .moment-gitalk .gt-comment-username {
+          font-size: 13px !important;
+          font-weight: bold !important;
+          color: #576b95 !important;
+        }
+        .dark .moment-gitalk .gt-comment-username {
+          color: #7f99cc !important;
+        }
+        .moment-gitalk .gt-comment-body {
+          font-size: 13px !important;
+          color: inherit !important;
+          padding: 2px 0 0 0 !important;
+          margin-top: 0 !important;
+        }
+        .moment-gitalk .gt-comment-body p {
+          margin: 0 !important;
+        }
+        .moment-gitalk .gt-comment-like,
+        .moment-gitalk .gt-comment-edit,
+        .moment-gitalk .gt-comment-reply {
+          display: none !important;
+        }
+      `}</style>
+    </div>
+  );
+}
