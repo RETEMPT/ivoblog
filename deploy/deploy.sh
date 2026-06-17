@@ -1,159 +1,63 @@
 #!/bin/bash
 # ============================================================
 # iV0 Blog — Cloud Server Deployment Script
-# Domain: vilatileno.xyz
+# Domain: vilatileno.xyz | SSL: Alibaba Cloud
 # ============================================================
 set -euo pipefail
 
-# --- Configuration ------------------------------------------
 DOMAIN="vilatileno.xyz"
-EMAIL="${EMAIL:-admin@vilatileno.xyz}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-CONF_DIR="$SCRIPT_DIR/nginx/conf.d"
-REAL_CONF="$CONF_DIR/vilatileno.xyz.conf"
-HTTP_CONF="$CONF_DIR/vilatileno.xyz.http.conf"
-VOLUME_PREFIX="deploy"  # Match docker-compose project name or compose file dir
 
-# --- Colors -------------------------------------------------
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 info()  { echo -e "${GREEN}[INFO]${NC}  $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 err()   { echo -e "${RED}[ERROR]${NC} $*"; }
 
-# ============================================================
 check_prereqs() {
     info "Checking prerequisites..."
-
     local missing=()
-    for cmd in docker curl; do
+    for cmd in docker; do
         if ! command -v "$cmd" &>/dev/null; then
             missing+=("$cmd")
         fi
     done
-    for cmd in git; do
-        if ! command -v "$cmd" &>/dev/null; then
-            warn "git not found — code updates via git won't work"
-        fi
-    done
-
     if [ ${#missing[@]} -gt 0 ]; then
-        err "Missing required tools: ${missing[*]}"
-        err "Install: sudo apt install -y ${missing[*]}"
+        err "Missing: ${missing[*]}. Install: sudo apt install -y ${missing[*]}"
         exit 1
     fi
-
     if ! docker compose version &>/dev/null; then
-        err "Docker Compose v2 not found. Install it first."
+        err "Docker Compose v2 not found."
         exit 1
     fi
 
-    info "All prerequisites are met."
+    # Verify SSL cert files exist
+    if [ ! -f "$SCRIPT_DIR/nginx/ssl/vilatileno.xyz.pem" ] || [ ! -f "$SCRIPT_DIR/nginx/ssl/vilatileno.xyz.key" ]; then
+        err "SSL certificate files not found!"
+        err "Place them at: $SCRIPT_DIR/nginx/ssl/"
+        err "  vilatileno.xyz.pem"
+        err "  vilatileno.xyz.key"
+        exit 1
+    fi
+
+    info "All checks passed."
 }
 
-# ============================================================
 setup_env() {
-    info "Setting up environment variables..."
-
     local ENV_FILE="$PROJECT_DIR/ivoblog/blog/.env.production"
-
     if [ ! -f "$ENV_FILE" ]; then
         err ".env.production not found at $ENV_FILE"
-        err "Copy the template and fill in your API keys:"
-        err "  cp ivoblog/blog/.env.production ivoblog/blog/.env.production.bak  # if exists"
-        err "Then edit ivoblog/blog/.env.production"
         exit 1
     fi
-
     if grep -q "your_deepseek_api_key_here" "$ENV_FILE"; then
-        warn "DEEPSEEK_API_KEY not configured — AI chat will not work."
+        warn "DEEPSEEK_API_KEY not configured."
     fi
-    if grep -q "your_netease_cookie_here" "$ENV_FILE"; then
-        warn "NETEASE_MUSIC_COOKIE not configured — music player may degrade."
-    fi
-
     info "Environment: $ENV_FILE"
 }
 
-# ============================================================
-# Step 1: Issue SSL certificate (run ONCE, before first deploy)
-init_ssl() {
-    info "Issuing SSL certificate for $DOMAIN ..."
-
-    cd "$SCRIPT_DIR"
-
-    # Check if cert already exists in the Docker volume
-    if docker compose run --rm certbot certificates 2>/dev/null | grep -q "$DOMAIN"; then
-        info "SSL certificate already exists for $DOMAIN. Skipping."
-        return
-    fi
-
-    # Temporarily disable the real HTTPS config (it references certs that don't exist yet)
-    if [ -f "$REAL_CONF" ]; then
-        info "Temporarily disabling HTTPS config for SSL issuance..."
-        mv "$REAL_CONF" "${REAL_CONF}.disabled"
-    fi
-
-    # Write HTTP-only config for ACME challenge
-    cat > "$HTTP_CONF" << NGINX_HTTP
-# Temporary HTTP-only config for SSL certificate issuance
-server {
-    listen 80;
-    listen [::]:80;
-    server_name $DOMAIN www.$DOMAIN;
-
-    location /.well-known/acme-challenge/ {
-        root /var/www/certbot;
-    }
-
-    location / {
-        return 200 "SSL setup in progress — please wait...\n";
-    }
-}
-NGINX_HTTP
-
-    # Create Docker volumes first if they don't exist
-    docker compose up -d certbot 2>/dev/null || true
-    docker compose stop certbot 2>/dev/null || true
-
-    # Start a standalone nginx for ACME challenge
-    info "Starting temporary nginx for ACME challenge..."
-    docker run -d --rm --name iv0-nginx-acme \
-        -p 80:80 \
-        -v "${SCRIPT_DIR}/nginx/nginx.conf:/etc/nginx/nginx.conf:ro" \
-        -v "${SCRIPT_DIR}/nginx/conf.d:/etc/nginx/conf.d:ro" \
-        nginx:alpine 2>/dev/null || true
-
-    # Request certificate using webroot
-    info "Requesting SSL certificate from Let's Encrypt..."
-    docker compose run --rm certbot certonly \
-        --webroot \
-        --webroot-path=/var/www/certbot \
-        --email "$EMAIL" \
-        --agree-tos \
-        --no-eff-email \
-        -d "$DOMAIN" \
-        -d "www.$DOMAIN"
-
-    # Cleanup
-    info "Cleaning up temporary nginx..."
-    docker stop iv0-nginx-acme 2>/dev/null || true
-
-    # Restore real config & remove temp
-    rm -f "$HTTP_CONF"
-    if [ -f "${REAL_CONF}.disabled" ]; then
-        mv "${REAL_CONF}.disabled" "$REAL_CONF"
-    fi
-
-    info "SSL certificate issued successfully for $DOMAIN!"
-}
-
-# ============================================================
-# Step 2: Build and deploy
 deploy() {
     info "Building blog Docker image..."
     cd "$SCRIPT_DIR"
-
     docker compose build blog
 
     info "Starting all services..."
@@ -174,8 +78,7 @@ deploy() {
     done
 
     if [ $retries -ge 30 ]; then
-        err "Blog failed health check. Inspect logs:"
-        err "  docker compose logs blog"
+        err "Blog failed health check. Check: docker compose logs blog"
         exit 1
     fi
 
@@ -189,12 +92,11 @@ deploy() {
     info "========================================="
 }
 
-# ============================================================
 status() {
     cd "$SCRIPT_DIR"
     echo ""
     echo "======================================"
-    echo " Deployment Status — $DOMAIN"
+    echo " $DOMAIN — Deployment Status"
     echo "======================================"
     docker compose ps
     echo ""
@@ -207,13 +109,7 @@ status() {
     echo "  ./deploy.sh stop       # Stop everything"
 }
 
-# ============================================================
-# Main
 case "${1:-}" in
-    init-ssl)
-        check_prereqs
-        init_ssl
-        ;;
     deploy)
         check_prereqs
         setup_env
@@ -239,18 +135,9 @@ case "${1:-}" in
         ;;
     *)
         echo ""
-        echo "iV0 Blog Deploy Manager — $DOMAIN"
+        echo "iV0 Blog Deploy — $DOMAIN (Alibaba Cloud SSL)"
         echo ""
-        echo "Usage: $0 <command>"
-        echo ""
-        echo "Commands:"
-        echo "  init-ssl  — Issue SSL certificate (run ONCE before first deploy)"
-        echo "  deploy    — Build & start all services"
-        echo "  status    — Show service status"
-        echo "  restart   — Restart the blog container"
-        echo "  logs [svc]— View logs (default: blog, or 'nginx')"
-        echo "  stop      — Stop all services"
-        echo ""
+        echo "Usage: $0 {deploy|status|restart|logs [svc]|stop}"
         exit 1
         ;;
 esac
