@@ -2,7 +2,7 @@ services:
   blog:
     build:
       context: ../ivoblog/blog
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.runtime
     container_name: iv0-blog
     restart: unless-stopped
     env_file:

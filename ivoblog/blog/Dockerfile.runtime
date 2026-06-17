@@ -1,0 +1,25 @@
+# Runtime-only Dockerfile — assumes .next/ is already built locally
+FROM node:22-alpine AS runner
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+
+RUN addgroup --system --gid 1001 nodejs \
+    && adduser --system --uid 1001 nextjs
+
+# Copy pre-built standalone output
+COPY .next/standalone ./
+# Copy static assets
+COPY .next/static ./.next/static
+# Copy public files
+COPY public ./public
+
+RUN mkdir -p public/uploads && chown -R nextjs:nodejs public/uploads
+
+USER nextjs
+EXPOSE 3000
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+
+CMD ["node", "server.js"]
