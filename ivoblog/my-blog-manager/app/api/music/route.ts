@@ -24,7 +24,9 @@ type MusicSong = {
 
 type CachedMusicSong = MusicSong & { cachedAt: number };
 
-const CACHE_FILE = path.join(process.cwd(), ".music-cache.json");
+const MUSIC_CACHE_DIR = path.join(/*turbopackIgnore: true*/ process.cwd(), "public", "uploads", "music");
+const COVER_CACHE_DIR = path.join(/*turbopackIgnore: true*/ process.cwd(), "public", "uploads", "covers");
+const CACHE_FILE = path.join(MUSIC_CACHE_DIR, ".music-cache.json");
 const CACHE_FRESH_AGE = 7 * 24 * 60 * 60 * 1000;
 const CACHE_STALE_AGE = 30 * 24 * 60 * 60 * 1000;
 const REQUEST_TIMEOUT = 5000;
@@ -53,6 +55,7 @@ function loadCache(): Map<string, CachedMusicSong> {
 
 function saveCache(cache: Map<string, CachedMusicSong>) {
   try {
+    fs.mkdirSync(MUSIC_CACHE_DIR, { recursive: true });
     fs.writeFileSync(CACHE_FILE, JSON.stringify(Object.fromEntries(cache), null, 2), "utf-8");
   } catch {
     // Cache is best-effort.
@@ -268,48 +271,25 @@ async function cacheRemoteCover(id: string, coverUrl: string) {
           ? ".gif"
           : ".jpg";
     const publicPath = `/uploads/covers/${id}${ext}`;
-    let saved = false;
+    fs.mkdirSync(COVER_CACHE_DIR, { recursive: true });
+    fs.writeFileSync(path.join(COVER_CACHE_DIR, `${id}${ext}`), bytes);
 
-    for (const root of publicRoots()) {
-      try {
-        const targetDir = path.join(root, "public", "uploads", "covers");
-        fs.mkdirSync(targetDir, { recursive: true });
-        fs.writeFileSync(path.join(targetDir, `${id}${ext}`), bytes);
-        saved = true;
-      } catch {
-        // Cover cache is best-effort.
-      }
-    }
-
-    return saved ? publicPath : "";
+    return publicPath;
   } catch {
     return "";
   }
 }
 
 function findCachedCover(id: string) {
-  for (const root of publicRoots()) {
-    const coverDir = path.join(root, "public", "uploads", "covers");
-    for (const ext of [".jpg", ".png", ".webp", ".gif"]) {
-      const file = path.join(coverDir, `${id}${ext}`);
-      try {
-        if (fs.existsSync(file) && fs.statSync(file).size > 1024) return `/uploads/covers/${id}${ext}`;
-      } catch {
-        // Ignore unreadable cache entries.
-      }
+  for (const ext of [".jpg", ".png", ".webp", ".gif"]) {
+    const file = path.join(COVER_CACHE_DIR, `${id}${ext}`);
+    try {
+      if (fs.existsSync(file) && fs.statSync(file).size > 1024) return `/uploads/covers/${id}${ext}`;
+    } catch {
+      // Ignore unreadable cache entries.
     }
   }
   return "";
-}
-
-function publicRoots() {
-  const roots = [process.cwd()];
-  const siblingBlog = path.resolve(process.cwd(), "..", "blog");
-  const siblingManager = path.resolve(process.cwd(), "..", "my-blog-manager");
-  for (const root of [siblingBlog, siblingManager]) {
-    if (fs.existsSync(root) && !roots.includes(root)) roots.push(root);
-  }
-  return roots;
 }
 
 function resolveLocalManifestSongs(ids: string[]): MusicSong[] {
@@ -320,16 +300,14 @@ function resolveLocalManifestSongs(ids: string[]): MusicSong[] {
 }
 
 function loadLocalMusicManifest(): Record<string, any> {
-  for (const root of publicRoots()) {
-    const target = path.join(root, "public", "uploads", "music", "local_music.json");
-    try {
-      if (fs.existsSync(target)) {
-        const data = JSON.parse(fs.readFileSync(target, "utf-8"));
-        if (data && typeof data === "object" && !Array.isArray(data)) return data;
-      }
-    } catch {
-      // Ignore malformed local music manifests.
+  const target = path.join(MUSIC_CACHE_DIR, "local_music.json");
+  try {
+    if (fs.existsSync(target)) {
+      const data = JSON.parse(fs.readFileSync(target, "utf-8"));
+      if (data && typeof data === "object" && !Array.isArray(data)) return data;
     }
+  } catch {
+    // Ignore malformed local music manifests.
   }
   return {};
 }
@@ -361,15 +339,12 @@ function normalizeLocalManifestSong(id: string, item: any): MusicSong | null {
 }
 
 function findLocalAudioFile(id: string) {
-  for (const root of publicRoots()) {
-    const directory = path.join(root, "public", "uploads", "music");
-    for (const ext of [".flac", ".mp3", ".m4a", ".aac", ".ogg", ".wav"]) {
-      const file = path.join(directory, `${id}${ext}`);
-      try {
-        if (fs.existsSync(file) && fs.statSync(file).size > 8 * 1024) return file;
-      } catch {
-        // Ignore unreadable local files.
-      }
+  for (const ext of [".flac", ".mp3", ".m4a", ".aac", ".ogg", ".wav"]) {
+    const file = path.join(MUSIC_CACHE_DIR, `${id}${ext}`);
+    try {
+      if (fs.existsSync(file) && fs.statSync(file).size > 8 * 1024) return file;
+    } catch {
+      // Ignore unreadable local files.
     }
   }
   return "";

@@ -192,6 +192,37 @@ main
 
 如果用普通 SSH 地址 `git@github.com:<owner>/<repo>.git`，要确认当前机器的默认 GitHub SSH Key 对该仓库有写入权限。
 
+## C 线：同步到自建 VPS
+
+C 线用于把本地管理端的内容精准同步到自己的云服务器。它不负责重新构建代码，适合已经用 Docker 运行过博客、并且博客页面已启用动态读取内容的场景。
+
+管理端会先把管理端内容镜像到本地 `ivoblog/blog`，再通过 SSH/SCP 同步到服务器：
+
+```text
+posts/
+chatters/
+moments/
+data/albums.ts
+data/friends.ts
+data/projects.ts
+siteConfig.ts
+app/about/about.md
+public/uploads/
+```
+
+`public/uploads/` 会包含本地上传的图片、封面、音乐和 `public/uploads/music/local_music.json`。远程同步时会先删除目标目录再重新传输，避免服务器上残留旧文章、旧说说或旧封面。
+
+首次启用 C 线时需要先在服务器做一次代码构建，让 `.next` 包含动态页面配置：
+
+```powershell
+cd ivoblog\blog
+npm run build
+```
+
+然后把新的 `.next` 上传到 VPS 并重启容器。之后只改文章、封面、图片、图集、音乐等内容时，可以直接使用管理端的 C 线同步，不需要每次重新 build。
+
+当前需要动态读取内容的页面包括首页、文章详情页和说说详情页。它们使用 `force-dynamic`，服务器请求页面时会读取最新 `.md` 和本地资源路径，而不是继续返回构建时的旧 HTML。
+
 ## 推荐发布流程
 
 每次准备发布前按这个顺序走，逻辑最清楚：
@@ -213,6 +244,7 @@ git push
 6. 如果使用 Vercel，等待自动部署完成。
 7. 如果使用管理端源码同步，点击管理端的源码同步按钮。
 8. 如果使用 GitHub Pages，点击管理端的静态发布按钮，或执行 `npm run deploy`。
+9. 如果使用自建 VPS，确认服务器已经完成过一次新代码构建后，点击管理端 C 线同步。
 
 ## 常见问题
 
@@ -224,7 +256,23 @@ git push
 http://127.0.0.1:52560/api/status
 ```
 
-如果前端端口显示被占用，关闭旧的 Next dev 进程后重新启动管理端。
+如果启动窗口出现 `Another next dev server is already running`，说明上一次管理端前端进程还残留在 3001/3002/3003 一类端口上。当前启动器会先清理这些管理端端口再启动；如果仍失败，按日志里的 PID 执行：
+
+```powershell
+taskkill /PID <PID> /F /T
+```
+
+再重新运行顶层 `start-manager.bat`。C 线同步、封面上传、配置读取都依赖这个 Python 后端；`52560/api/status` 打不开时，先不要排查 VPS。
+
+### C 线同步到 VPS 失败
+
+按顺序排查：
+
+1. 本地管理端后端在线：`http://127.0.0.1:52560/api/status`。
+2. VPS 配置中的本地 Blog 路径指向 `E:\iV0Blogs-main\ivoblog\blog`。
+3. SSH 能连上服务器：`ssh -p 22 root@8.210.185.155`。
+4. 远程项目路径是 `/opt/ivoblog`，实际博客目录应为 `/opt/ivoblog/ivoblog/blog`。
+5. 服务器已经做过一次新代码构建并重启容器，之后内容更新才可以只走 C 线同步。
 
 ### 专辑封面或图片不显示
 

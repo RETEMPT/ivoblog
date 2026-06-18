@@ -494,15 +494,39 @@ def _cover_targets(song_id: str) -> list[str]:
 
 
 def _find_cached_cover(song_id: str) -> str | None:
-    for path in _cover_targets(song_id):
-        if os.path.exists(path) and os.path.getsize(path) > 1024:
-            # Refresh mtime so we can age-out stale covers
-            try:
-                os.utime(path, None)
-            except OSError:
-                pass
-            return f"/{COVER_DIR}/{song_id}.jpg"
+    for ext in (".jpg", ".png", ".webp", ".gif"):
+        for root in (PROJECT_ROOT, BLOG_ROOT):
+            if not os.path.isdir(root):
+                continue
+            path = os.path.join(root, "public", COVER_DIR, f"{song_id}{ext}")
+            if os.path.exists(path) and os.path.getsize(path) > 1024:
+                # Refresh mtime so we can age-out stale covers
+                try:
+                    os.utime(path, None)
+                except OSError:
+                    pass
+                return f"/{COVER_DIR}/{song_id}{ext}"
     return None
+
+
+def _cover_url_with_version(song_id: str, cover_url: str) -> str:
+    """Append ?v=<file_mtime> to the cover URL so browsers reload after an overwrite."""
+    if not cover_url or cover_url == LOCAL_DEFAULT_COVER:
+        return cover_url
+    # Strip any existing query params first
+    base_url = cover_url.split("?")[0]
+    for ext in (".jpg", ".png", ".webp", ".gif"):
+        for root in (PROJECT_ROOT, BLOG_ROOT):
+            if not os.path.isdir(root):
+                continue
+            path = os.path.join(root, "public", COVER_DIR, f"{song_id}{ext}")
+            if os.path.exists(path):
+                try:
+                    mtime = int(os.path.getmtime(path))
+                    return f"{base_url}?v={mtime}"
+                except OSError:
+                    pass
+    return cover_url
 
 
 def _cache_cover(song_id: str, cover_url: str) -> str | None:
@@ -1033,6 +1057,17 @@ def save_local_music_manifest(manifest: Dict[str, Any]) -> None:
         os.replace(tmp, target)
 
 
+def _invalidate_music_cache() -> None:
+    """Delete .music-cache.json files so Next.js re-reads local_music.json."""
+    for root in (PROJECT_ROOT, BLOG_ROOT):
+        cache_file = os.path.join(root, ".music-cache.json")
+        if os.path.exists(cache_file):
+            try:
+                os.remove(cache_file)
+            except OSError:
+                pass
+
+
 def update_local_music_manifest(song: Dict[str, Any]) -> None:
     song_id = str(song.get("id") or "").strip()
     if not song_id:
@@ -1338,12 +1373,17 @@ async def upload_local_audio(id: str = Form(""), file: UploadFile = File(...)):
     if not song_id or not song_id.isdigit() or len(song_id) < 3:
         song_id = _generate_song_id(data)
 
-    # Save embedded cover art if present
-    cover_url = _find_cached_cover(song_id)
-    if not cover_url and meta.get("cover_data"):
+    # Save embedded cover art — always overwrite old cover with new embedded data
+    cover_url = None
+    if meta.get("cover_data"):
         cover_url = _save_cover_from_embedded(song_id, meta["cover_data"], meta["cover_mime"])
     if not cover_url:
+        cover_url = _find_cached_cover(song_id)
+    if not cover_url:
         cover_url = LOCAL_DEFAULT_COVER
+    # Append file mtime as version param to bust browser cache after overwrite
+    if cover_url and cover_url != LOCAL_DEFAULT_COVER:
+        cover_url = _cover_url_with_version(song_id, cover_url)
 
     saved = []
     warnings = []
@@ -1381,6 +1421,7 @@ async def upload_local_audio(id: str = Form(""), file: UploadFile = File(...)):
         "source": "local-upload",
     }
     update_local_music_manifest(song)
+    _invalidate_music_cache()
 
     _op_log("upload", f"id={song_id} title={meta['title']} cover={'embedded' if meta.get('has_embedded_cover') else 'none'}", True)
 
@@ -1434,6 +1475,7 @@ async def upload_local_audio_batch(id: str = Form(""), files: List[UploadFile] =
                 item["lyric"] = sidecar_lyrics
                 item["hasLyrics"] = True
                 save_local_music_manifest(manifest)
+                _invalidate_music_cache()
                 result["hasLyrics"] = True
                 result["song"] = {**(result.get("song") or {}), "lrc": sidecar_lyrics, "lyric": sidecar_lyrics}
         results.append(result)

@@ -367,7 +367,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       window.clearTimeout(timeoutId);
       window.clearTimeout(requestTimeoutId);
     };
-  }, [configuredIdsKey, pathname]);
+  }, [configuredIds, configuredIdsKey, pathname]);
 
   useEffect(() => {
     if (!currentSongId) {

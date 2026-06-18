@@ -4,6 +4,9 @@ import subprocess
 import re
 import getpass
 import platform
+import posixpath
+import shlex
+import shutil
 from fastapi import APIRouter, Request
 from cms_core.security import atomic_write_json, validate_git_branch
 
@@ -271,6 +274,123 @@ SYNC_CONTENT_FILES = [
 SYNC_UPLOADS = True  # public/uploads/
 
 
+def _process_result_tail(proc: subprocess.CompletedProcess, max_len: int = 400) -> str:
+    text = (proc.stderr or proc.stdout or "").strip()
+    return text[-max_len:] if text else f"exit code {proc.returncode}"
+
+
+def _run_command(cmd: list[str], cwd: str | None = None) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        cmd,
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+
+
+def _validate_vps_target(server_ip: str, server_user: str, server_port: str, remote_path: str) -> tuple[bool, str]:
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", server_ip or ""):
+        return False, "服务器地址只能包含字母、数字、点、下划线和短横线。"
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]{0,31}", server_user or ""):
+        return False, "SSH 用户名格式不正确。"
+    if not re.fullmatch(r"\d{1,5}", server_port or "") or not (1 <= int(server_port) <= 65535):
+        return False, "SSH 端口必须是 1-65535 的数字。"
+    if not re.fullmatch(r"/[A-Za-z0-9._/\-]*", remote_path or ""):
+        return False, "远程项目路径必须是绝对路径，且只能包含字母、数字、点、下划线、短横线和斜杠。"
+    if any(part == ".." for part in remote_path.split("/")):
+        return False, "远程项目路径不能包含 ..。"
+    return True, ""
+
+
+def _ssh_options(server_port: str) -> list[str]:
+    return ["-o", "StrictHostKeyChecking=accept-new", "-p", server_port]
+
+
+def _scp_options(server_port: str) -> list[str]:
+    return ["-o", "StrictHostKeyChecking=accept-new", "-P", server_port]
+
+
+def _ssh_host(server_user: str, server_ip: str) -> str:
+    return f"{server_user}@{server_ip}"
+
+
+def _remote_blog_path(remote_project_path: str) -> str:
+    return posixpath.join(remote_project_path.rstrip("/"), "ivoblog", "blog")
+
+
+def _run_remote(server_user: str, server_ip: str, server_port: str, command: str) -> subprocess.CompletedProcess:
+    return _run_command(["ssh", *_ssh_options(server_port), _ssh_host(server_user, server_ip), command])
+
+
+def _prepare_remote_replace_dir(server_user: str, server_ip: str, server_port: str, remote_dir: str) -> subprocess.CompletedProcess:
+    parent = posixpath.dirname(remote_dir.rstrip("/"))
+    command = f"mkdir -p {shlex.quote(parent)} && rm -rf {shlex.quote(remote_dir)}"
+    return _run_remote(server_user, server_ip, server_port, command)
+
+
+def _ensure_remote_dir(server_user: str, server_ip: str, server_port: str, remote_dir: str) -> subprocess.CompletedProcess:
+    return _run_remote(server_user, server_ip, server_port, f"mkdir -p {shlex.quote(remote_dir)}")
+
+
+def _sync_remote_directory(server_user: str, server_ip: str, server_port: str, local_dir: str, remote_dir: str) -> tuple[bool, str]:
+    prep = _prepare_remote_replace_dir(server_user, server_ip, server_port, remote_dir)
+    if prep.returncode != 0:
+        return False, _process_result_tail(prep)
+
+    remote_parent = posixpath.dirname(remote_dir.rstrip("/"))
+    local_arg = os.path.abspath(local_dir)
+    target_arg = f"{_ssh_host(server_user, server_ip)}:{remote_parent}/"
+    proc = _run_command(["scp", *_scp_options(server_port), "-r", local_arg, target_arg])
+    if proc.returncode != 0:
+        return False, _process_result_tail(proc)
+    return True, ""
+
+
+def _sync_remote_file(server_user: str, server_ip: str, server_port: str, local_file: str, remote_file: str) -> tuple[bool, str]:
+    parent = posixpath.dirname(remote_file)
+    prep = _ensure_remote_dir(server_user, server_ip, server_port, parent)
+    if prep.returncode != 0:
+        return False, _process_result_tail(prep)
+
+    target_arg = f"{_ssh_host(server_user, server_ip)}:{remote_file}"
+    proc = _run_command(["scp", *_scp_options(server_port), os.path.abspath(local_file), target_arg])
+    if proc.returncode != 0:
+        return False, _process_result_tail(proc)
+    return True, ""
+
+
+def _copy_manager_content_to_blog(blog_path: str) -> list[str]:
+    copied: list[str] = []
+    for dirname in SYNC_CONTENT_DIRS:
+        src_dir = os.path.join(PROJECT_ROOT, dirname)
+        dst_dir = os.path.join(blog_path, dirname)
+        if os.path.isdir(src_dir):
+            if os.path.exists(dst_dir):
+                shutil.rmtree(dst_dir)
+            shutil.copytree(src_dir, dst_dir)
+            copied.append(f"{dirname}/")
+
+    for rel_path in SYNC_CONTENT_FILES:
+        src_file = os.path.join(PROJECT_ROOT, rel_path.replace("/", os.sep))
+        dst_file = os.path.join(blog_path, rel_path.replace("/", os.sep))
+        if os.path.isfile(src_file):
+            os.makedirs(os.path.dirname(dst_file), exist_ok=True)
+            shutil.copy2(src_file, dst_file)
+            copied.append(rel_path)
+
+    src_uploads = os.path.join(PROJECT_ROOT, "public", "uploads")
+    dst_uploads = os.path.join(blog_path, "public", "uploads")
+    if SYNC_UPLOADS and os.path.isdir(src_uploads):
+        if os.path.exists(dst_uploads):
+            shutil.rmtree(dst_uploads)
+        shutil.copytree(src_uploads, dst_uploads)
+        copied.append("public/uploads/")
+
+    return copied
+
+
 def _read_vps_config() -> dict:
     if os.path.exists(VPS_CONFIG_FILE):
         try:
@@ -279,6 +399,7 @@ def _read_vps_config() -> dict:
         except:
             pass
     return {
+        "blogPath": "",
         "serverIp": "",
         "serverUser": "root",
         "serverPort": "22",
@@ -308,8 +429,8 @@ async def deploy_to_vps(request: Request):
     """一键将管理器内容同步到云服务器 Docker 博客"""
     try:
         payload = await request.json()
-        blog_path = payload.get("blogPath", "").strip()
         vps_config = payload.get("vpsConfig", {})
+        blog_path = (payload.get("blogPath", "") or vps_config.get("blogPath", "")).strip()
 
         server_ip = vps_config.get("serverIp", "").strip()
         server_user = vps_config.get("serverUser", "root").strip()
@@ -319,44 +440,23 @@ async def deploy_to_vps(request: Request):
 
         if not server_ip:
             return {"success": False, "message": "VPS IP 地址未配置！"}
+        valid, validation_message = _validate_vps_target(server_ip, server_user, server_port, remote_path)
+        if not valid:
+            return {"success": False, "message": validation_message}
 
         if not blog_path or not os.path.exists(blog_path):
             return {"success": False, "message": "本地 Blog 路径不存在！"}
 
-        # Step 0: First sync manager content to local blog directory
-        import shutil
-        for dirname in SYNC_CONTENT_DIRS:
-            src_dir = os.path.join(PROJECT_ROOT, dirname)
-            dst_dir = os.path.join(blog_path, dirname)
-            if os.path.exists(src_dir):
-                if os.path.exists(dst_dir):
-                    shutil.rmtree(dst_dir)
-                shutil.copytree(src_dir, dst_dir)
-        for rel_path in SYNC_CONTENT_FILES:
-            src_file = os.path.join(PROJECT_ROOT, rel_path.replace("/", os.sep))
-            dst_file = os.path.join(blog_path, rel_path.replace("/", os.sep))
-            if os.path.exists(src_file):
-                os.makedirs(os.path.dirname(dst_file), exist_ok=True)
-                shutil.copy2(src_file, dst_file)
-        # Also sync public/uploads/
-        src_uploads = os.path.join(PROJECT_ROOT, "public", "uploads")
-        dst_uploads = os.path.join(blog_path, "public", "uploads")
-        if os.path.exists(src_uploads):
-            os.makedirs(dst_uploads, exist_ok=True)
-            for item in os.listdir(src_uploads):
-                s = os.path.join(src_uploads, item)
-                d = os.path.join(dst_uploads, item)
-                if os.path.isdir(s):
-                    if os.path.exists(d):
-                        shutil.rmtree(d)
-                    shutil.copytree(s, d)
-                else:
-                    shutil.copy2(s, d)
+        local_copied = _copy_manager_content_to_blog(blog_path)
+        remote_blog = _remote_blog_path(remote_path)
 
-        ssh_opts = f"-o StrictHostKeyChecking=accept-new -p {server_port}"
-        remote_target = f"{server_user}@{server_ip}:{remote_path}/ivoblog/blog"
+        init_remote = _ensure_remote_dir(server_user, server_ip, server_port, remote_blog)
+        if init_remote.returncode != 0:
+            return {"success": False, "message": f"远程目录初始化失败: {_process_result_tail(init_remote)}"}
 
-        results = ["📦 本地内容已同步到 Blog 目录"]
+        results = ["本地管理端内容已同步到 Blog 目录"]
+        if local_copied:
+            results.append("本地同步清单: " + ", ".join(local_copied))
         errors = []
 
         # Step 1: Sync content directories (posts, chatters, moments)
@@ -364,51 +464,53 @@ async def deploy_to_vps(request: Request):
             local_dir = os.path.join(blog_path, dirname)
             if not os.path.exists(local_dir):
                 continue
-            local_dir_slash = local_dir.replace("\\", "/")
-            cmd = ["scp", ssh_opts, "-r", f"{local_dir_slash}/", f"{remote_target}/{dirname}/"]
-            proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
-            if proc.returncode == 0:
-                results.append(f"✅ {dirname}/ 同步完成")
+            ok, err = _sync_remote_directory(
+                server_user,
+                server_ip,
+                server_port,
+                local_dir,
+                posixpath.join(remote_blog, dirname),
+            )
+            if ok:
+                results.append(f"{dirname}/ 已精准同步")
             else:
-                errors.append(f"❌ {dirname}/ 失败: {proc.stderr[-200:]}")
+                errors.append(f"{dirname}/ 同步失败: {err}")
 
         # Step 2: Sync individual config/data files
         for rel_path in SYNC_CONTENT_FILES:
             local_file = os.path.join(blog_path, rel_path.replace("/", os.sep))
             if not os.path.exists(local_file):
                 continue
-            remote_dir_rel = os.path.dirname(rel_path).replace("\\", "/")
-            local_file_fixed = local_file.replace("\\", "/")
-            cmd = [
-                "scp", ssh_opts, local_file_fixed,
-                f"{remote_target}/{remote_dir_rel}/" if remote_dir_rel else remote_target
-            ]
-            proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
-            if proc.returncode == 0:
-                results.append(f"✅ {rel_path} 同步完成")
+            remote_file = posixpath.join(remote_blog, rel_path.replace("\\", "/"))
+            ok, err = _sync_remote_file(server_user, server_ip, server_port, local_file, remote_file)
+            if ok:
+                results.append(f"{rel_path} 已同步")
             else:
-                errors.append(f"❌ {rel_path} 失败: {proc.stderr[-200:]}")
+                errors.append(f"{rel_path} 同步失败: {err}")
 
         # Step 3: Sync public/uploads/ if it exists
         local_uploads = os.path.join(blog_path, "public", "uploads")
         if SYNC_UPLOADS and os.path.exists(local_uploads):
-            local_uploads_fixed = local_uploads.replace("\\", "/")
-            cmd = ["scp", ssh_opts, "-r", f"{local_uploads_fixed}/", f"{remote_target}/public/uploads/"]
-            proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
-            if proc.returncode == 0:
-                results.append("✅ public/uploads/ 同步完成")
+            ok, err = _sync_remote_directory(
+                server_user,
+                server_ip,
+                server_port,
+                local_uploads,
+                posixpath.join(remote_blog, "public", "uploads"),
+            )
+            if ok:
+                results.append("public/uploads/ 已精准同步")
             else:
-                errors.append(f"❌ uploads/ 失败: {proc.stderr[-200:]}")
+                errors.append(f"public/uploads/ 同步失败: {err}")
 
         # Step 4: Restart blog container
         if auto_restart:
-            restart_cmd = f"cd {remote_path}/deploy && docker compose restart blog"
-            ssh_cmd = ["ssh", ssh_opts, f"{server_user}@{server_ip}", restart_cmd]
-            proc = subprocess.run(ssh_cmd, capture_output=True, text=True, encoding="utf-8")
+            restart_cmd = f"cd {shlex.quote(posixpath.join(remote_path, 'deploy'))} && docker compose restart blog"
+            proc = _run_remote(server_user, server_ip, server_port, restart_cmd)
             if proc.returncode == 0:
-                results.append("🔄 博客容器已重启，内容已生效！")
+                results.append("blog 容器已重启，动态页面会读取最新内容")
             else:
-                errors.append(f"⚠️ 重启失败: {proc.stderr[-200:]}")
+                errors.append(f"容器重启失败: {_process_result_tail(proc)}")
 
         success = len(errors) == 0
         summary = "\n".join(results + errors)

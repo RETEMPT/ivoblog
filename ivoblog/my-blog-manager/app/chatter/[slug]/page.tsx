@@ -23,16 +23,7 @@ import SidebarLyric from '../../../components/SidebarLyric';
 import BackButton from '../../../components/BackButton';
 import Comments from '../../../components/Comments';
 
-export async function generateStaticParams() {
-  const chattersDirectory = path.join(/*turbopackIgnore: true*/ process.cwd(), 'chatters');
-  if (!fs.existsSync(chattersDirectory)) return [];
-  const filenames = fs.readdirSync(chattersDirectory);
-  return filenames
-    .filter((name) => name.endsWith('.md'))
-    .map((name) => ({
-      slug: name.replace(/\.md$/, ''),
-    }));
-}
+export const dynamic = 'force-dynamic';
 
 async function getChatterData(slug: string) {
   const fullPath = path.join(/*turbopackIgnore: true*/ process.cwd(), 'chatters', `${slug}.md`);

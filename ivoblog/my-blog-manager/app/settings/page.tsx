@@ -169,7 +169,6 @@ function SettingsContent() {
   const [queryResult, setQueryResult] = useState<any>(null);
   const [musicDetails, setMusicDetails] = useState<Record<string, any>>({});
   const requestedMusicIdsRef = useRef<Set<string>>(new Set());
-  const saveTimersRef = useRef<Record<string, number>>({});
 
   const saveConfigPayload = useCallback(async (label: string, payload: Record<string, any>, quiet = false) => {
     const updates = pickConfigPayload(payload);
@@ -193,20 +192,6 @@ function SettingsContent() {
     if (!quiet) showToast(`${label} saved.`, "success");
     return true;
   }, [showToast]);
-
-  const scheduleConfigSave = useCallback((field: string, value: any) => {
-    if (!CONFIG_UPDATE_KEYS.includes(field)) return;
-    const delay = typeof value === "string" ? 550 : 0;
-
-    if (saveTimersRef.current[field]) {
-      window.clearTimeout(saveTimersRef.current[field]);
-    }
-
-    saveTimersRef.current[field] = window.setTimeout(() => {
-      void saveConfigPayload(field, { [field]: value }, true);
-      delete saveTimersRef.current[field];
-    }, delay);
-  }, [saveConfigPayload]);
 
   const handleUpdate = useCallback((field: string, value: any) => {
     const normalizedValue = normalizeConfigValue(field, value);
@@ -272,13 +257,6 @@ function SettingsContent() {
     void fetchRealConfig();
     return () => { cancelled = true; };
   }, [showToast]);
-
-  useEffect(() => {
-    return () => {
-      Object.values(saveTimersRef.current).forEach((timer) => window.clearTimeout(timer));
-      saveTimersRef.current = {};
-    };
-  }, []);
 
   const fetchMusicDetail = async (id: string) => {
     const data = await fetchBackendJson(`/api/music/query/${id}`, undefined, 8000);

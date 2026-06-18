@@ -18,6 +18,7 @@ SYNC_FILES = [
     "data/projects.ts",
     "siteConfig.ts",
 ]
+SYNC_UPLOADS = True  # public/uploads/ (cover images, music files, etc.)
 SENSITIVE_CONFIG_MARKERS = ("picBedName:", "picBedUrl:", "picBedToken:", "图床核心配置")
 
 
@@ -90,6 +91,20 @@ async def execute_sync(request: Request):
             else:
                 atomic_copy_file(src_file, dst_file)
 
-        return {"success": True, "message": "Content and config synced to target blog."}
+        # Merge public/uploads/ (non-destructive — only adds/updates, never deletes)
+        if SYNC_UPLOADS:
+            src_uploads = os.path.join(PROJECT_ROOT, "public", "uploads")
+            dst_uploads = os.path.join(target_path, "public", "uploads")
+            if os.path.isdir(src_uploads):
+                os.makedirs(dst_uploads, exist_ok=True)
+                for item in os.listdir(src_uploads):
+                    s = os.path.join(src_uploads, item)
+                    d = os.path.join(dst_uploads, item)
+                    if os.path.isdir(s):
+                        shutil.copytree(s, d, dirs_exist_ok=True)
+                    else:
+                        shutil.copy2(s, d)
+
+        return {"success": True, "message": "Content, config and uploads synced to target blog."}
     except Exception as e:
         return {"success": False, "message": f"Sync failed: {str(e)}"}

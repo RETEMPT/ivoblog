@@ -109,11 +109,72 @@ status() {
     echo "  ./deploy.sh stop       # Stop everything"
 }
 
+update() {
+    info "Pulling latest code from GitHub..."
+    cd "$PROJECT_DIR"
+
+    # Stash any local drift so pull is always clean
+    if ! git diff --quiet || ! git diff --cached --quiet; then
+        warn "Local changes detected — stashing before pull."
+        git stash push -m "auto-stash before update $(date +%s)" || true
+    fi
+
+    local current_branch
+    current_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
+
+    if ! git pull origin "$current_branch"; then
+        err "Git pull failed. Check network or GitHub auth."
+        exit 1
+    fi
+
+    info "Git pull successful — $(git log -1 --oneline)"
+
+    info "Rebuilding Docker image..."
+    cd "$SCRIPT_DIR"
+    docker compose build blog
+
+    info "Recreating blog container..."
+    docker compose up -d blog
+
+    info "Waiting for blog health check..."
+    local retries=0
+    while [ $retries -lt 30 ]; do
+        if docker compose ps | grep -q "blog.*healthy"; then
+            info "Blog is healthy!"
+            break
+        fi
+        sleep 2
+        retries=$((retries + 1))
+        if [ $((retries % 5)) -eq 0 ]; then
+            info "  Still waiting... ($((retries * 2))s)"
+        fi
+    done
+
+    if [ $retries -ge 30 ]; then
+        err "Blog failed health check. Check: docker compose logs blog"
+        exit 1
+    fi
+
+    info "Reloading nginx..."
+    docker compose exec nginx nginx -s reload 2>/dev/null || docker compose restart nginx
+
+    info ""
+    info "========================================="
+    info "  Update complete!"
+    info "  https://$DOMAIN"
+    info "========================================="
+}
+
 case "${1:-}" in
     deploy)
         check_prereqs
         setup_env
         deploy
+        status
+        ;;
+    update)
+        check_prereqs
+        update
         status
         ;;
     status)
@@ -137,7 +198,7 @@ case "${1:-}" in
         echo ""
         echo "iV0 Blog Deploy — $DOMAIN (Alibaba Cloud SSL)"
         echo ""
-        echo "Usage: $0 {deploy|status|restart|logs [svc]|stop}"
+        echo "Usage: $0 {deploy|update|status|restart|logs [svc]|stop}"
         exit 1
         ;;
 esac

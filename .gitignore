@@ -32,6 +32,7 @@ Thumbs.db
 # Deployment and local manager state
 .vercel/
 ivoblog/my-blog-manager/data/deploy_config.json
+ivoblog/my-blog-manager/data/vps_config.json
 ivoblog/my-blog-manager/window_config.json
 ivoblog/my-blog-manager/*.tmp
 ivoblog/my-blog-manager/.siteConfig.ts.*.tmp

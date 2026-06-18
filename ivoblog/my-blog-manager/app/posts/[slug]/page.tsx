@@ -23,18 +23,7 @@ import BackButton from '../../../components/BackButton';
 import Comments from '../../../components/Comments';
 import SidebarLyric from '../../../components/SidebarLyric';
 
-export async function generateStaticParams() {
-  const postsDirectory = path.join(/*turbopackIgnore: true*/ process.cwd(), 'posts');
-  if (!fs.existsSync(postsDirectory)) return [];
-
-  const filenames = fs.readdirSync(postsDirectory);
-
-  return filenames
-    .filter((name) => name.endsWith('.md'))
-    .map((name) => ({
-      slug: name.replace(/\.md$/, ''),
-    }));
-}
+export const dynamic = 'force-dynamic';
 
 function extractToc(content: string) {
   const headingRegex = /^(#{1,3})\s+(.+)$/gm;

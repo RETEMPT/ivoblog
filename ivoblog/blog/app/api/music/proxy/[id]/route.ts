@@ -5,7 +5,6 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const MUSIC_BACKEND_BASE = (process.env.MUSIC_BACKEND_BASE || "http://127.0.0.1:52560").replace(/\/+$/, "");
-const CACHE_SUBDIR = path.join("public", "uploads", "music");
 const AUDIO_EXTENSIONS = [".flac", ".mp3", ".m4a", ".aac", ".ogg", ".wav"];
 const MIN_AUDIO_BYTES = 8 * 1024;  // 8 KB — accept short preview clips too
 
@@ -27,17 +26,8 @@ function looksLikeAudio(contentType: string, url: string, bytes: Buffer): boolea
   return false;
 }
 
-function publicRoots() {
-  const roots = [
-    process.cwd(),
-    path.resolve(process.cwd(), "..", "blog"),
-    path.resolve(process.cwd(), "..", "my-blog-manager"),
-  ];
-  return [...new Set(roots)].filter((root) => root === process.cwd() || fs.existsSync(root));
-}
-
-function cacheDirs() {
-  return publicRoots().map((root) => path.join(root, CACHE_SUBDIR));
+function cacheDir() {
+  return path.join(/*turbopackIgnore: true*/ process.cwd(), "public", "uploads", "music");
 }
 
 function contentTypeFor(filePath: string) {
@@ -50,11 +40,10 @@ function contentTypeFor(filePath: string) {
 }
 
 function findLocalAudio(id: string) {
-  for (const directory of cacheDirs()) {
-    for (const ext of AUDIO_EXTENSIONS) {
-      const filePath = path.join(directory, `${id}${ext}`);
-      if (fs.existsSync(filePath) && fs.statSync(filePath).size >= MIN_AUDIO_BYTES) return filePath;
-    }
+  const directory = cacheDir();
+  for (const ext of AUDIO_EXTENSIONS) {
+    const filePath = path.join(directory, `${id}${ext}`);
+    if (fs.existsSync(filePath) && fs.statSync(filePath).size >= MIN_AUDIO_BYTES) return filePath;
   }
   return null;
 }
@@ -125,10 +114,9 @@ async function fetchAndCacheRemoteAudio(id: string) {
   const bytes = Buffer.from(await response.arrayBuffer());
   if (bytes.length < MIN_AUDIO_BYTES || !looksLikeAudio(contentType, url, bytes)) return null;
 
-  for (const directory of cacheDirs()) {
-    fs.mkdirSync(directory, { recursive: true });
-    fs.writeFileSync(path.join(directory, `${id}.mp3`), bytes);
-  }
+  const directory = cacheDir();
+  fs.mkdirSync(directory, { recursive: true });
+  fs.writeFileSync(path.join(directory, `${id}.mp3`), bytes);
   return { bytes, contentType: contentType.includes("audio") ? contentType : "audio/mpeg" };
 }
 

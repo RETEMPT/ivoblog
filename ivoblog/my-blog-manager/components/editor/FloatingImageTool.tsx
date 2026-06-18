@@ -10,9 +10,10 @@ interface FloatingImageToolProps {
   isOpen: boolean;
   onClose: () => void;
   onInsert: (url: string) => void;
+  autoInsertOnUpload?: boolean;
 }
 
-export default function FloatingImageTool({ isOpen, onClose, onInsert }: FloatingImageToolProps) {
+export default function FloatingImageTool({ isOpen, onClose, onInsert, autoInsertOnUpload = false }: FloatingImageToolProps) {
   const { showToast } = useToast();
   const [isUploading, setIsUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -40,6 +41,11 @@ export default function FloatingImageTool({ isOpen, onClose, onInsert }: Floatin
       });
 
       if (data?.success && data.url) {
+        if (autoInsertOnUpload) {
+          onInsert(data.url);
+          setUploadedUrl("");
+          return;
+        }
         setUploadedUrl(data.url);
         showToast("图片已保存到本地。", "success");
       } else {

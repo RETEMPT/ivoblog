@@ -21,6 +21,8 @@ import HomeFocusDock from "../components/HomeFocusDock";
 import SafeImage from "../components/SafeImage";
 import { Plus, Search } from "lucide-react";
 
+export const dynamic = 'force-dynamic';
+
 const DEFAULT_HOME_DOCK_CONFIG = {
   enabled: true,
   defaultModule: "profile",
@@ -50,6 +52,12 @@ type HomeChatter = {
   date: string;
   formattedDate: string;
 };
+
+function localImageOrFallback(value: unknown, fallback = siteConfig.defaultPostCover) {
+  const src = typeof value === "string" ? value.trim() : "";
+  if (!src || src.startsWith("//") || /^[a-z][a-z0-9+.-]*:\/\//i.test(src)) return fallback;
+  return src.startsWith("/") ? src : fallback;
+}
 
 function HomeCardSkeleton({ className = "" }: { className?: string }) {
   return (
@@ -97,6 +105,7 @@ const getHomePosts = cache(() => {
           const fullPath = path.join(postsDirectory, fileName);
           const { data, content } = matter(fs.readFileSync(fullPath, "utf8"));
           const rawDate = String(data.date || "1970-01-01");
+          const cover = localImageOrFallback(data.cover);
 
           return {
             slug: fileName.replace(/\.md$/, ""),
@@ -104,6 +113,7 @@ const getHomePosts = cache(() => {
             title: String(data.title || ""),
             description: String(data.description || ""),
             content: content || "",
+            cover,
             date: rawDate,
             formattedDate: formatUpdateTime(rawDate),
           } as HomePost;
@@ -135,10 +145,7 @@ const getHomeChatters = cache(() => {
           const fullPath = path.join(chattersDirectory, fileName);
           const { data, content } = matter(fs.readFileSync(fullPath, "utf8"));
           const rawDate = String(data.date || "1970-01-01");
-          const cover = String(
-            data.cover ||
-              siteConfig.defaultPostCover,
-          );
+          const cover = localImageOrFallback(data.cover);
 
           return {
             slug: fileName.replace(/\.md$/, ""),
@@ -234,12 +241,22 @@ export default function Home() {
             <div className="relative mb-6 aspect-[4/3] w-[85%]">
               <div className="absolute inset-0 rotate-6 translate-x-4 translate-y-2 overflow-hidden rounded-[4px] border-[6px] border-white bg-slate-300 opacity-60 shadow-md transition-all duration-500 group-hover:rotate-12 dark:border-slate-200 dark:bg-slate-700">
                 {album.photos[2] && (
-                  <SafeImage src={album.photos[2].url} alt="" className="h-full w-full object-cover grayscale blur-[2px]" />
+                  <SafeImage
+                    src={album.photos[2].url}
+                    fallbackSrc={album.cover || siteConfig.photoWallImage || siteConfig.defaultPostCover}
+                    alt=""
+                    className="h-full w-full object-cover grayscale blur-[2px]"
+                  />
                 )}
               </div>
               <div className="absolute inset-0 z-10 -rotate-3 -translate-x-2 -translate-y-1 overflow-hidden rounded-[4px] border-[6px] border-white bg-slate-200 opacity-80 shadow-lg transition-all duration-500 group-hover:-rotate-6 dark:border-slate-200 dark:bg-slate-600">
                 {album.photos[1] && (
-                  <SafeImage src={album.photos[1].url} alt="" className="h-full w-full object-cover grayscale-[50%]" />
+                  <SafeImage
+                    src={album.photos[1].url}
+                    fallbackSrc={album.cover || siteConfig.photoWallImage || siteConfig.defaultPostCover}
+                    alt=""
+                    className="h-full w-full object-cover grayscale-[50%]"
+                  />
                 )}
               </div>
               <div className="absolute inset-0 z-20 overflow-hidden rounded-[4px] border-[6px] border-white bg-white shadow-2xl transition-all duration-500 group-hover:-translate-y-2 group-hover:scale-105 dark:border-slate-200 dark:bg-slate-200">

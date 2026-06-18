@@ -16,28 +16,41 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 EXE_DIR = BASE_DIR
 FRONTEND_PORT = 3001
 BACKEND_PORT = 52560
+FRONTEND_CLEANUP_PORTS = (FRONTEND_PORT, FRONTEND_PORT + 1, FRONTEND_PORT + 2)
 WINDOW_CONFIG_FILE = os.path.join(EXE_DIR, "window_config.json")
 
 frontend_process = None
 
 
-def release_port(port: int):
+def npm_cmd() -> str:
+    return "npm.cmd" if os.name == "nt" else "npm"
+
+
+def release_port(port: int) -> list[str]:
+    killed_pids: list[str] = []
     try:
-        command = f"netstat -ano | findstr :{port}"
-        result = subprocess.check_output(command, shell=True).decode(errors="ignore")
+        result = subprocess.check_output(["netstat", "-ano"], text=True, encoding="utf-8", errors="ignore")
         for line in result.strip().splitlines():
             parts = line.strip().split()
-            if len(parts) >= 5 and parts[3] == "LISTENING":
+            if len(parts) >= 5 and parts[1].endswith(f":{port}") and "LISTENING" in parts:
                 pid = parts[-1]
                 subprocess.run(
-                    f"taskkill /PID {pid} /F /T",
-                    shell=True,
+                    ["taskkill", "/PID", pid, "/F", "/T"],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
+                killed_pids.append(pid)
                 time.sleep(0.4)
     except Exception:
         pass
+    return killed_pids
+
+
+def release_manager_frontend_ports():
+    for port in FRONTEND_CLEANUP_PORTS:
+        killed = release_port(port)
+        if killed:
+            print(f"[cleanup] released frontend port {port}: PID {', '.join(killed)}")
 
 
 def load_window_size():
@@ -122,12 +135,11 @@ def start_frontend():
 
     if os.path.exists(server_js):
         print(f"[frontend] production mode: http://127.0.0.1:{FRONTEND_PORT}/settings")
-        frontend_process = subprocess.Popen(["node", "server.js"], cwd=standalone_dir, env=env_vars, shell=True)
+        frontend_process = subprocess.Popen(["node", "server.js"], cwd=standalone_dir, env=env_vars)
     else:
         print(f"[frontend] dev mode: http://127.0.0.1:{FRONTEND_PORT}/settings")
         frontend_process = subprocess.Popen(
-            f"npm run dev -- --hostname 127.0.0.1 --port {FRONTEND_PORT}",
-            shell=True,
+            [npm_cmd(), "run", "dev", "--", "--hostname", "127.0.0.1", "--port", str(FRONTEND_PORT)],
             cwd=BASE_DIR,
             env=env_vars,
         )
@@ -136,12 +148,11 @@ def start_frontend():
 def on_closed():
     if frontend_process:
         subprocess.run(
-            f"taskkill /F /T /PID {frontend_process.pid}",
-            shell=True,
+            ["taskkill", "/F", "/T", "/PID", str(frontend_process.pid)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-    release_port(FRONTEND_PORT)
+    release_manager_frontend_ports()
     release_port(BACKEND_PORT)
     os._exit(0)
 
@@ -160,7 +171,7 @@ if __name__ == "__main__":
     print("  Close this window to stop")
     print("==========================================")
 
-    release_port(FRONTEND_PORT)
+    release_manager_frontend_ports()
     release_port(BACKEND_PORT)
     write_port_config(BACKEND_PORT)
 

@@ -8,7 +8,17 @@ router = APIRouter()
 # 🌟 动态寻址逻辑
 CURRENT_API_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_API_DIR, "..", ".."))
-FRIENDS_TS_PATH = os.path.join(PROJECT_ROOT, "data", "friends.ts")
+BLOG_ROOT = os.path.abspath(os.path.join(PROJECT_ROOT, "..", "blog"))
+
+
+def _friends_ts_targets() -> list[str]:
+    """Return all writable data/friends.ts paths (manager + blog)."""
+    paths = []
+    for root in (PROJECT_ROOT, BLOG_ROOT):
+        p = os.path.join(root, "data", "friends.ts")
+        if os.path.isdir(os.path.dirname(p)):
+            paths.append(p)
+    return list(dict.fromkeys(paths))  # deduplicate
 
 
 @router.post("/sync")
@@ -27,9 +37,11 @@ async def sync_friends(request: Request):
             f"export const friendsData: Friend[] = {json_str};"
         )
 
-        # 3. 物理落盘
-        atomic_write_text(FRIENDS_TS_PATH, ts_content)
+        # 3. 物理落盘 — 双写 manager + blog
+        targets = _friends_ts_targets()
+        for path in targets:
+            atomic_write_text(path, ts_content)
 
-        return {"success": True, "message": f"✨ 友链物理文件已更新！共同步 {len(friends_list)} 位好友。"}
+        return {"success": True, "message": f"✨ 友链物理文件已更新！共同步 {len(friends_list)} 位好友，写入 {len(targets)} 个目标。"}
     except Exception as e:
         return {"success": False, "message": f"后端同步崩溃: {str(e)}"}

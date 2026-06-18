@@ -4,8 +4,8 @@ import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from '../ToastProvider';
-import { ShieldCheck, GitBranch, Save, Rocket, Wand2, Key, Copy, Check, CloudUpload, Code, Server } from 'lucide-react';
-import { fetchBackend } from './backendClient';
+import { ShieldCheck, GitBranch, Save, Rocket, Wand2, Key, Copy, Check, CloudUpload, Code, Server, ChevronDown, ChevronRight } from 'lucide-react';
+import { checkBackendHealth, fetchBackend, getBackendBase } from './backendClient';
 
 export default function RepoSection() {
   const { showToast } = useToast();
@@ -17,6 +17,7 @@ export default function RepoSection() {
   const [isVPSSyncing, setIsVPSSyncing] = useState(false);
   const [isInitializing, setIsInitializing] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
+  const [vpsConfigExpanded, setVpsConfigExpanded] = useState(false);
 
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -39,6 +40,7 @@ export default function RepoSection() {
 
   // VPS config
   const [vpsConfig, setVpsConfig] = useState({
+    blogPath: "",
     serverIp: "",
     serverUser: "root",
     serverPort: "22",
@@ -53,13 +55,16 @@ export default function RepoSection() {
         if (res.ok) {
           const data = await res.json();
           if (data.serverIp !== undefined) {
+            const resolvedBlogPath = data.blogPath || localStorage.getItem("targetBlogPath") || "";
             setVpsConfig({
+              blogPath: resolvedBlogPath,
               serverIp: data.serverIp || "",
               serverUser: data.serverUser || "root",
               serverPort: data.serverPort || "22",
               remoteProjectPath: data.remoteProjectPath || "/opt/ivoblog",
               autoRestart: data.autoRestart !== false,
             });
+            if (resolvedBlogPath) localStorage.setItem("targetBlogPath", resolvedBlogPath);
           }
         }
       } catch {}
@@ -88,6 +93,33 @@ export default function RepoSection() {
     };
     fetchConfig();
   }, [showToast]);
+
+  const formatRequestError = (error: unknown) => {
+    if (error instanceof Error && error.message) return error.message;
+    return "network request failed";
+  };
+
+  const ensureBackendReady = async () => {
+    const online = await checkBackendHealth({ force: true, timeoutMs: 3000 });
+    if (online) return true;
+
+    const apiBase = await getBackendBase();
+    showToast(
+      `Python 后端未连接。请从项目顶层运行 start-manager.bat，并确认 ${apiBase}/api/status 可打开。`,
+      "error",
+    );
+    return false;
+  };
+
+  const readJsonResponse = async (res: Response) => {
+    const text = await res.text();
+    if (!text) return null;
+    try {
+      return JSON.parse(text);
+    } catch {
+      return { success: false, message: text };
+    }
+  };
 
   const testPathConnection = async () => {
     if (!deployData.blogPath) { showToast("路径不能为空！", "warning"); return; }
@@ -191,33 +223,49 @@ export default function RepoSection() {
   // 🖥️ C 线：一键同步到自建 VPS
   const handleSaveVpsConfig = async () => {
     try {
+      if (!(await ensureBackendReady())) return;
       const res = await fetchBackend("/api/deploy/vps/config", {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(vpsConfig)
       });
-      const data = await res.json();
+      const data = (await readJsonResponse(res)) || { success: false, message: "Empty response" };
+      if (!res.ok) {
+        showToast(`VPS 配置保存失败：HTTP ${res.status} ${data?.message || res.statusText}`, "error");
+        return;
+      }
       if (data.success) showToast("VPS 配置已保存", "success");
       else showToast(data.message, "error");
-    } catch { showToast("保存失败", "error"); }
+    } catch (error) {
+      showToast(`保存失败：${formatRequestError(error)}`, "error");
+    }
   };
 
   const executeVPSSync = async () => {
-    if (!deployData.blogPath) { showToast("请先配置 Blog 物理路径！", "warning"); return; }
-    if (!vpsConfig.serverIp) { showToast("请先填写 VPS 服务器 IP！", "warning"); return; }
+    const blogPath = vpsConfig.blogPath || localStorage.getItem("targetBlogPath") || "";
+    if (!blogPath) { showToast("请先在 VPS 配置中填写 Blog 物理路径！", "warning"); setVpsConfigExpanded(true); return; }
+    if (!vpsConfig.serverIp) { showToast("请先填写 VPS 服务器 IP！", "warning"); setVpsConfigExpanded(true); return; }
     setIsVPSSyncing(true);
-    showToast("🖥️ 正在同步内容到云服务器...", "info");
     try {
+      if (!(await ensureBackendReady())) return;
+      showToast("正在同步内容到云服务器...", "info");
       const res = await fetchBackend("/api/deploy/vps/deploy", {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ blogPath: deployData.blogPath, vpsConfig })
-      });
-      const data = await res.json();
+        body: JSON.stringify({ blogPath, vpsConfig })
+      }, 120000);
+      const data = (await readJsonResponse(res)) || { success: false, message: "Empty response" };
+      if (!res.ok) {
+        showToast(`VPS 同步请求失败：HTTP ${res.status} ${data?.message || res.statusText}`, "error");
+        return;
+      }
       if (data.success) showToast(data.message, "success");
       else showToast(`❌ 同步失败:\n${data.message}`, "error");
-    } catch { showToast("VPS 同步请求失败", "error"); }
-    setIsVPSSyncing(false);
+    } catch (error) {
+      showToast(`VPS 同步请求没有到达 Python 后端：${formatRequestError(error)}`, "error");
+    } finally {
+      setIsVPSSyncing(false);
+    }
   };
 
   const handleSaveConfig = async () => {
@@ -309,37 +357,68 @@ export default function RepoSection() {
 
             {/* 🌟 C线：VPS 云服务器部署区 */}
             <div className="p-4 bg-purple-500/5 border border-purple-500/20 rounded-2xl mb-4 relative">
-              <div className="mb-3">
-                <h4 className="text-[10px] font-black text-purple-600 dark:text-purple-400 uppercase flex items-center gap-1"><Server size={12}/> C 线：自建 VPS 云服务器 (Docker)</h4>
-              </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
-                <div className="col-span-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase ml-1">服务器 IP</label>
-                  <input type="text" value={vpsConfig.serverIp} onChange={e => setVpsConfig({...vpsConfig, serverIp: e.target.value})} className="w-full bg-white dark:bg-slate-900/50 border border-purple-200/50 dark:border-purple-700/50 rounded-xl px-3 py-2 text-xs mt-1 outline-none font-mono focus:ring-2 focus:ring-purple-500" placeholder="8.210.185.155" />
-                </div>
-                <div>
-                  <label className="text-[10px] font-black text-slate-400 uppercase ml-1">SSH 用户</label>
-                  <input type="text" value={vpsConfig.serverUser} onChange={e => setVpsConfig({...vpsConfig, serverUser: e.target.value})} className="w-full bg-white dark:bg-slate-900/50 border border-purple-200/50 dark:border-purple-700/50 rounded-xl px-3 py-2 text-xs mt-1 outline-none font-mono focus:ring-2 focus:ring-purple-500" placeholder="root" />
-                </div>
-                <div>
-                  <label className="text-[10px] font-black text-slate-400 uppercase ml-1">端口</label>
-                  <input type="text" value={vpsConfig.serverPort} onChange={e => setVpsConfig({...vpsConfig, serverPort: e.target.value})} className="w-full bg-white dark:bg-slate-900/50 border border-purple-200/50 dark:border-purple-700/50 rounded-xl px-3 py-2 text-xs mt-1 outline-none font-mono focus:ring-2 focus:ring-purple-500" placeholder="22" />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3 mb-3">
-                <div className="col-span-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase ml-1">远程项目路径</label>
-                  <input type="text" value={vpsConfig.remoteProjectPath} onChange={e => setVpsConfig({...vpsConfig, remoteProjectPath: e.target.value})} className="w-full bg-white dark:bg-slate-900/50 border border-purple-200/50 dark:border-purple-700/50 rounded-xl px-3 py-2 text-xs mt-1 outline-none font-mono focus:ring-2 focus:ring-purple-500" placeholder="/opt/ivoblog" />
-                </div>
-              </div>
-              <div className="flex gap-3 flex-col md:flex-row">
-                <button onClick={handleSaveVpsConfig} className="flex-1 flex items-center justify-center gap-2 py-3 bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-800 rounded-xl text-xs font-black hover:bg-purple-100 transition-colors">
-                  <Save size={14} /> 保存 VPS 配置
+              {/* Always-visible header row with sync button */}
+              <div className="flex items-center justify-between">
+                <button
+                  onClick={() => setVpsConfigExpanded(!vpsConfigExpanded)}
+                  className="flex items-center gap-1 text-[10px] font-black text-purple-600 dark:text-purple-400 uppercase hover:text-purple-800 dark:hover:text-purple-300 transition-colors"
+                >
+                  {vpsConfigExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                  <Server size={12} /> C 线：自建 VPS 云服务器 (Docker)
                 </button>
-                <button onClick={executeVPSSync} disabled={isVPSSyncing} className="flex-1 flex items-center justify-center gap-2 py-3 bg-purple-500 text-white rounded-xl text-xs font-black shadow-lg shadow-purple-500/30 active:scale-95 transition-all hover:bg-purple-600 disabled:opacity-50">
-                  <Server size={14} className={isVPSSyncing ? "animate-pulse" : ""} /> {isVPSSyncing ? "同步中..." : "🖥️ 一键同步到 VPS"}
+                <button
+                  onClick={executeVPSSync}
+                  disabled={isVPSSyncing}
+                  className="flex items-center justify-center gap-2 py-2 px-5 bg-purple-500 text-white rounded-xl text-xs font-black shadow-lg shadow-purple-500/30 active:scale-95 transition-all hover:bg-purple-600 disabled:opacity-50"
+                >
+                  <Server size={14} className={isVPSSyncing ? "animate-pulse" : ""} />
+                  {isVPSSyncing ? "同步中..." : "🖥️ 一键同步到 VPS"}
                 </button>
               </div>
+
+              {/* Collapsible config form */}
+              {vpsConfigExpanded && (
+                <div className="mt-4 pt-4 border-t border-purple-200/30 dark:border-purple-700/30 space-y-3">
+                  {/* Blog physical path */}
+                  <div>
+                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Blog 物理路径</label>
+                    <input
+                      type="text"
+                      value={vpsConfig.blogPath}
+                      onChange={e => setVpsConfig({...vpsConfig, blogPath: e.target.value})}
+                      className="w-full bg-white dark:bg-slate-900/50 border border-purple-200/50 dark:border-purple-700/50 rounded-xl px-3 py-2 text-xs mt-1 outline-none font-mono focus:ring-2 focus:ring-purple-500"
+                      placeholder="E:/iV0Blogs-main/ivoblog/blog"
+                    />
+                  </div>
+
+                  {/* Server IP, user, port row */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div className="col-span-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase ml-1">服务器 IP</label>
+                      <input type="text" value={vpsConfig.serverIp} onChange={e => setVpsConfig({...vpsConfig, serverIp: e.target.value})} className="w-full bg-white dark:bg-slate-900/50 border border-purple-200/50 dark:border-purple-700/50 rounded-xl px-3 py-2 text-xs mt-1 outline-none font-mono focus:ring-2 focus:ring-purple-500" placeholder="8.210.185.155" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black text-slate-400 uppercase ml-1">SSH 用户</label>
+                      <input type="text" value={vpsConfig.serverUser} onChange={e => setVpsConfig({...vpsConfig, serverUser: e.target.value})} className="w-full bg-white dark:bg-slate-900/50 border border-purple-200/50 dark:border-purple-700/50 rounded-xl px-3 py-2 text-xs mt-1 outline-none font-mono focus:ring-2 focus:ring-purple-500" placeholder="root" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black text-slate-400 uppercase ml-1">端口</label>
+                      <input type="text" value={vpsConfig.serverPort} onChange={e => setVpsConfig({...vpsConfig, serverPort: e.target.value})} className="w-full bg-white dark:bg-slate-900/50 border border-purple-200/50 dark:border-purple-700/50 rounded-xl px-3 py-2 text-xs mt-1 outline-none font-mono focus:ring-2 focus:ring-purple-500" placeholder="22" />
+                    </div>
+                  </div>
+
+                  {/* Remote project path */}
+                  <div>
+                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1">远程项目路径</label>
+                    <input type="text" value={vpsConfig.remoteProjectPath} onChange={e => setVpsConfig({...vpsConfig, remoteProjectPath: e.target.value})} className="w-full bg-white dark:bg-slate-900/50 border border-purple-200/50 dark:border-purple-700/50 rounded-xl px-3 py-2 text-xs mt-1 outline-none font-mono focus:ring-2 focus:ring-purple-500" placeholder="/opt/ivoblog" />
+                  </div>
+
+                  {/* Save button */}
+                  <button onClick={handleSaveVpsConfig} className="w-full flex items-center justify-center gap-2 py-3 bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-800 rounded-xl text-xs font-black hover:bg-purple-100 transition-colors">
+                    <Save size={14} /> 保存 VPS 配置
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* 操作按钮区 */}

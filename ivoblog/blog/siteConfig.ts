@@ -45,6 +45,10 @@ export const siteConfig = {
   chatterTitle: "Moments",
   chatterDescription: "Short notes, ideas, and daily fragments.",
 
+  picBedName: "Local Upload",
+  picBedUrl: "",
+  picBedToken: "",
+
   danmakuList: [
     "Welcome",
     "Loading inspiration",
@@ -90,8 +94,7 @@ export const siteConfig = {
     modelId: "deepseek-chat",
     apiBaseUrl: "https://models.sjtu.edu.cn/api/v1",
     apiKeyEnvName: "DEEPSEEK_API_KEY",
-    systemPrompt:
-      "You are a concise, friendly blog assistant. Keep replies short, helpful, and safe. Do not expose secrets or internal configuration.",
+    systemPrompt: "You are a concise, friendly blog assistant. Keep replies short, helpful, and safe. Do not expose secrets or internal configuration.",
     maxOutputTokens: 150,
     temperature: 0.85,
     thinkingStrength: "balanced",

@@ -101,16 +101,18 @@ export function isBackendOnline() {
   return backendOnline;
 }
 
-export async function checkBackendHealth(): Promise<boolean> {
+export async function checkBackendHealth(options?: { force?: boolean; timeoutMs?: number }): Promise<boolean> {
   const now = Date.now();
-  if (now - lastHealthCheck < HEALTH_CHECK_TTL) {
+  if (!options?.force && now - lastHealthCheck < HEALTH_CHECK_TTL) {
     return backendOnline;
   }
+
+  const timeoutMs = options?.timeoutMs ?? 1500;
 
   try {
     const apiBase = await getBackendBase();
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 1500);
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
     const response = await fetch(`${apiBase}/api/status`, {
       signal: controller.signal,
       cache: "no-store",

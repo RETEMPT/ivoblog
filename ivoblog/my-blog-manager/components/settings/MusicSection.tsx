@@ -383,6 +383,9 @@ export default function MusicSection({
         ...detailUpdates,
       }));
 
+      // Clear playlist localStorage cache so the player picks up new covers immediately
+      try { window.localStorage.removeItem("iv0:music-playlist:v3"); } catch { /* noop */ }
+
       const nextIds = normalizeIds([...cloudMusicIds, ...uploadedIds]);
       handleUpdate("cloudMusicIds", nextIds);
       handleUpdate("musicPlaybackMode", "local");

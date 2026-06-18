@@ -1,6 +1,6 @@
 import { siteConfig } from "../../../siteConfig";
 
-export const runtime = "edge";
+export const runtime = "nodejs";
 
 const thinkingHints: Record<string, string> = {
   light: "Use a fast, direct answer. Keep it concise.",
