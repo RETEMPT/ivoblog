@@ -70,6 +70,26 @@ cd E:\iV0Blogs-main
 
 图片、头像、专辑封面和文章插图建议通过管理端上传到本地 `public/uploads/` 或对应内容目录，再由配置文件引用本地路径。这样 Vercel、GitHub Pages 或静态托管读取的都是仓库里的资源，不依赖外链是否可用。
 
+## 项目验证
+
+每轮代码或内容同步改动后，建议按顺序运行验证。注意：在 Windows 下，Next/Turbopack 的 `next build` 请在各自项目目录里直接运行，不要用根目录脚本、`cmd &&` 链或嵌套 npm 编排。
+
+```powershell
+node ivoblog\scripts\check-data-sync.mjs
+
+cd E:\iV0Blogs-main\ivoblog\blog
+npm run build
+npm run lint
+npm run typecheck
+
+cd E:\iV0Blogs-main\ivoblog\my-blog-manager
+npm run build
+npm run lint
+npm run typecheck
+```
+
+这样会检查管理端与公开博客数据镜像、两个 Next.js 应用的生产构建、lint 和 TypeScript 类型。
+
 ## 推送到 GitHub
 
 第一次把顶层项目推送到 GitHub：

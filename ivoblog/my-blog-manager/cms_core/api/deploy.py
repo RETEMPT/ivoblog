@@ -8,12 +8,13 @@ import posixpath
 import shlex
 import shutil
 from fastapi import APIRouter, Request
-from cms_core.security import atomic_write_json, validate_git_branch
+from cms_core.security import atomic_write_json, safe_join, validate_git_branch
 
 router = APIRouter()
 
 CURRENT_API_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_API_DIR, "..", ".."))
+SOURCE_ROOT = os.path.realpath(PROJECT_ROOT)
 CONFIG_FILE = os.path.join(PROJECT_ROOT, "data", "deploy_config.json")
 
 
@@ -361,31 +362,53 @@ def _sync_remote_file(server_user: str, server_ip: str, server_port: str, local_
     return True, ""
 
 
+def _validate_local_blog_path(blog_path: str) -> str:
+    target_root = os.path.realpath(os.path.abspath(blog_path))
+    try:
+        inside_source_root = os.path.commonpath([SOURCE_ROOT, target_root]) == SOURCE_ROOT
+    except ValueError:
+        inside_source_root = False
+    if inside_source_root:
+        raise ValueError("Local Blog path cannot be inside the manager project.")
+    if not os.path.isfile(os.path.join(target_root, "package.json")):
+        raise ValueError("Local Blog path is not a valid frontend project.")
+    return target_root
+
+
+def _mirror_local_directory(src_dir: str, dst_dir: str) -> None:
+    src_real = os.path.realpath(src_dir)
+    dst_real = os.path.realpath(dst_dir)
+    if src_real == dst_real:
+        raise ValueError("Source and target directories are the same.")
+    os.makedirs(os.path.dirname(dst_real), exist_ok=True)
+    if os.path.exists(dst_real):
+        shutil.rmtree(dst_real)
+    shutil.copytree(src_real, dst_real)
+
+
 def _copy_manager_content_to_blog(blog_path: str) -> list[str]:
+    blog_root = _validate_local_blog_path(blog_path)
     copied: list[str] = []
     for dirname in SYNC_CONTENT_DIRS:
-        src_dir = os.path.join(PROJECT_ROOT, dirname)
-        dst_dir = os.path.join(blog_path, dirname)
+        src_dir = safe_join(PROJECT_ROOT, dirname)
+        dst_dir = safe_join(blog_root, dirname)
         if os.path.isdir(src_dir):
-            if os.path.exists(dst_dir):
-                shutil.rmtree(dst_dir)
-            shutil.copytree(src_dir, dst_dir)
+            _mirror_local_directory(src_dir, dst_dir)
             copied.append(f"{dirname}/")
 
     for rel_path in SYNC_CONTENT_FILES:
-        src_file = os.path.join(PROJECT_ROOT, rel_path.replace("/", os.sep))
-        dst_file = os.path.join(blog_path, rel_path.replace("/", os.sep))
+        local_rel_path = rel_path.replace("/", os.sep)
+        src_file = safe_join(PROJECT_ROOT, local_rel_path)
+        dst_file = safe_join(blog_root, local_rel_path)
         if os.path.isfile(src_file):
             os.makedirs(os.path.dirname(dst_file), exist_ok=True)
             shutil.copy2(src_file, dst_file)
             copied.append(rel_path)
 
-    src_uploads = os.path.join(PROJECT_ROOT, "public", "uploads")
-    dst_uploads = os.path.join(blog_path, "public", "uploads")
+    src_uploads = safe_join(PROJECT_ROOT, "public", "uploads")
+    dst_uploads = safe_join(blog_root, "public", "uploads")
     if SYNC_UPLOADS and os.path.isdir(src_uploads):
-        if os.path.exists(dst_uploads):
-            shutil.rmtree(dst_uploads)
-        shutil.copytree(src_uploads, dst_uploads)
+        _mirror_local_directory(src_uploads, dst_uploads)
         copied.append("public/uploads/")
 
     return copied

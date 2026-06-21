@@ -3,12 +3,13 @@ import shutil
 
 from fastapi import APIRouter, Request
 
-from cms_core.security import atomic_copy_file, atomic_write_text
+from cms_core.security import atomic_copy_file, atomic_write_text, safe_join
 
 router = APIRouter()
 
 CURRENT_API_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_API_DIR, "..", ".."))
+SOURCE_ROOT = os.path.realpath(PROJECT_ROOT)
 
 SYNC_DIRS = ["posts", "chatters", "moments"]
 SYNC_FILES = [
@@ -22,8 +23,36 @@ SYNC_UPLOADS = True  # public/uploads/ (cover images, music files, etc.)
 SENSITIVE_CONFIG_MARKERS = ("picBedName:", "picBedUrl:", "picBedToken:", "图床核心配置")
 
 
-def is_safe_blog_dir(target_path: str) -> bool:
-    return bool(target_path) and os.path.exists(os.path.join(target_path, "package.json"))
+def validate_blog_dir(target_path: str) -> tuple[bool, str, str]:
+    if not target_path:
+        return False, "Target path is empty.", ""
+
+    target_root = os.path.realpath(os.path.abspath(target_path))
+    if not os.path.exists(target_root):
+        return False, "Target path does not exist.", target_root
+
+    try:
+        inside_source_root = os.path.commonpath([SOURCE_ROOT, target_root]) == SOURCE_ROOT
+    except ValueError:
+        inside_source_root = False
+    if inside_source_root:
+        return False, "Blocked: target path cannot be inside the manager project.", target_root
+
+    if not os.path.isfile(os.path.join(target_root, "package.json")):
+        return False, "Target path is not a valid frontend project.", target_root
+
+    return True, "", target_root
+
+
+def mirror_directory(src_dir: str, dst_dir: str) -> None:
+    src_real = os.path.realpath(src_dir)
+    dst_real = os.path.realpath(dst_dir)
+    if src_real == dst_real:
+        raise ValueError("Source and target directories are the same.")
+    os.makedirs(os.path.dirname(dst_real), exist_ok=True)
+    if os.path.exists(dst_real):
+        shutil.rmtree(dst_real)
+    shutil.copytree(src_real, dst_real)
 
 
 @router.post("/check")
@@ -32,15 +61,13 @@ async def check_blog_path(request: Request):
         payload = await request.json()
         target_path = payload.get("blogPath", "").strip()
 
-        if not target_path or not os.path.exists(target_path):
-            return {"success": False, "message": "Target path does not exist."}
-
-        if not is_safe_blog_dir(target_path):
-            return {"success": False, "message": "Target path is not a valid frontend project."}
+        valid, message, target_root = validate_blog_dir(target_path)
+        if not valid:
+            return {"success": False, "message": message}
 
         missing = []
         for dirname in ["posts", "data", "app"]:
-            if not os.path.exists(os.path.join(target_path, dirname)):
+            if not os.path.exists(safe_join(target_root, dirname)):
                 missing.append(dirname)
 
         if missing:
@@ -60,21 +87,21 @@ async def execute_sync(request: Request):
         payload = await request.json()
         target_path = payload.get("blogPath", "").strip()
 
-        if not is_safe_blog_dir(target_path):
-            return {"success": False, "message": "Blocked: target path is invalid."}
+        valid, message, target_root = validate_blog_dir(target_path)
+        if not valid:
+            return {"success": False, "message": message}
 
         for dirname in SYNC_DIRS:
-            src_dir = os.path.join(PROJECT_ROOT, dirname)
-            dst_dir = os.path.join(target_path, dirname)
+            src_dir = safe_join(PROJECT_ROOT, dirname)
+            dst_dir = safe_join(target_root, dirname)
 
             if os.path.exists(src_dir):
-                if os.path.exists(dst_dir):
-                    shutil.rmtree(dst_dir)
-                shutil.copytree(src_dir, dst_dir)
+                mirror_directory(src_dir, dst_dir)
 
         for rel_path in SYNC_FILES:
-            src_file = os.path.join(PROJECT_ROOT, rel_path.replace("/", os.sep))
-            dst_file = os.path.join(target_path, rel_path.replace("/", os.sep))
+            local_rel_path = rel_path.replace("/", os.sep)
+            src_file = safe_join(PROJECT_ROOT, local_rel_path)
+            dst_file = safe_join(target_root, local_rel_path)
 
             if not os.path.exists(src_file):
                 continue
@@ -91,20 +118,13 @@ async def execute_sync(request: Request):
             else:
                 atomic_copy_file(src_file, dst_file)
 
-        # Merge public/uploads/ (non-destructive — only adds/updates, never deletes)
+        # Mirror public/uploads/ so stale uploaded assets do not linger in the target blog.
         if SYNC_UPLOADS:
-            src_uploads = os.path.join(PROJECT_ROOT, "public", "uploads")
-            dst_uploads = os.path.join(target_path, "public", "uploads")
+            src_uploads = safe_join(PROJECT_ROOT, "public", "uploads")
+            dst_uploads = safe_join(target_root, "public", "uploads")
             if os.path.isdir(src_uploads):
-                os.makedirs(dst_uploads, exist_ok=True)
-                for item in os.listdir(src_uploads):
-                    s = os.path.join(src_uploads, item)
-                    d = os.path.join(dst_uploads, item)
-                    if os.path.isdir(s):
-                        shutil.copytree(s, d, dirs_exist_ok=True)
-                    else:
-                        shutil.copy2(s, d)
+                mirror_directory(src_uploads, dst_uploads)
 
-        return {"success": True, "message": "Content, config and uploads synced to target blog."}
+        return {"success": True, "message": "Content, config and uploads mirrored to target blog."}
     except Exception as e:
         return {"success": False, "message": f"Sync failed: {str(e)}"}
