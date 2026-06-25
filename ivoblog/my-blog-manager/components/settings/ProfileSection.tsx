@@ -177,7 +177,7 @@ export default function ProfileSection({ formData, handleUpdate, pushToQueue }: 
                   <div className="flex flex-col">
                     <span className="text-sm font-bold text-slate-800 dark:text-slate-200">等级系统</span>
                     <span className="mt-0.5 text-[10px] text-slate-500">
-                      Show achievement and level data in supported blog widgets.
+                      在支持的博客组件里显示成就与等级信息。
                     </span>
                   </div>
                   <button

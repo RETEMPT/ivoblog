@@ -10,12 +10,14 @@ import {
   ImagePlus,
   Images,
   LayoutDashboard,
+  Loader2,
   MessageCircle,
   MonitorCog,
   Music2,
   Palette,
   PanelBottom,
   Rocket,
+  Search,
   User,
 } from "lucide-react";
 import { useOperations } from "../../context/OperationContext";
@@ -190,39 +192,74 @@ function SettingsContent() {
   const { addOperation, operations } = useOperations();
   const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState("profile");
+  const [settingsSearch, setSettingsSearch] = useState("");
   const [formData, setFormData] = useState<any>(createInitialFormData);
   const [configStatus, setConfigStatus] = useState<"loading" | "online" | "offline">("loading");
+  const [savingLabels, setSavingLabels] = useState<string[]>([]);
   const [queryLoading, setQueryLoading] = useState(false);
   const [queryResult, setQueryResult] = useState<any>(null);
   const [musicDetails, setMusicDetails] = useState<Record<string, any>>({});
   const requestedMusicIdsRef = useRef<Set<string>>(new Set());
+  const savingRequestsRef = useRef<Map<string, string>>(new Map());
   const activeItem = useMemo(
     () => SETTINGS_MENU_ITEMS.find((item) => item.id === activeTab) || SETTINGS_MENU_ITEMS[0],
     [activeTab],
   );
 
+  const visibleSettingsItems = useMemo(() => {
+    const keyword = settingsSearch.trim().toLowerCase();
+    if (!keyword) return SETTINGS_MENU_ITEMS;
+
+    return SETTINGS_MENU_ITEMS.filter((item) =>
+      [item.name, item.group, item.summary, item.id]
+        .join(" ")
+        .toLowerCase()
+        .includes(keyword),
+    );
+  }, [settingsSearch]);
+
+  const setSavingRequest = useCallback((key: string, label: string, active: boolean) => {
+    if (active) {
+      savingRequestsRef.current.set(key, label);
+    } else {
+      savingRequestsRef.current.delete(key);
+    }
+    setSavingLabels(Array.from(new Set(savingRequestsRef.current.values())));
+  }, []);
+
   const saveConfigPayload = useCallback(async (label: string, payload: Record<string, any>, quiet = false) => {
     const updates = pickConfigPayload(payload);
     if (Object.keys(updates).length === 0) return false;
 
-    const data = await fetchBackendJson(
-      "/api/config/update",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ updates }),
-      },
-      12000,
-    );
-
-    if (!data?.success) {
-      showToast(data?.message || `${label} save failed. Start the local backend and try again.`, "error");
+    const saveKey = Object.keys(updates).sort().join("|");
+    if (savingRequestsRef.current.has(saveKey)) {
+      if (!quiet) showToast(`${label} 正在保存，请稍候。`, "warning");
       return false;
     }
 
-    if (!quiet) showToast(`${label} saved.`, "success");
-    return true;
-  }, [showToast]);
+    setSavingRequest(saveKey, label, true);
+    try {
+      const data = await fetchBackendJson(
+        "/api/config/update",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ updates }),
+        },
+        12000,
+      );
+
+      if (!data?.success) {
+        showToast(data?.message || `${label} 保存失败，请先确认本地后端已启动。`, "error");
+        return false;
+      }
+
+      if (!quiet) showToast(`${label} 已保存。`, "success");
+      return true;
+    } finally {
+      setSavingRequest(saveKey, label, false);
+    }
+  }, [setSavingRequest, showToast]);
 
   const handleUpdate = useCallback((field: string, value: any) => {
     const normalizedValue = normalizeConfigValue(field, value);
@@ -230,7 +267,7 @@ function SettingsContent() {
     // No auto-save — user must explicitly save via the "Save" button or Navbar queue
   }, []);
 
-  const pushToQueue = useCallback((label: string, keyOrPayload?: string | Record<string, any>, value?: any) => {
+  const pushToQueue = useCallback(async (label: string, keyOrPayload?: string | Record<string, any>, value?: any) => {
     const isSingleKey = typeof keyOrPayload === "string";
     const payload = isSingleKey
       ? { [keyOrPayload]: value }
@@ -238,7 +275,9 @@ function SettingsContent() {
         ? pickConfigPayload(keyOrPayload)
         : pickConfigPayload(formData);
 
-    void saveConfigPayload(label, payload);
+    const saved = await saveConfigPayload(label, payload);
+    if (!saved) return;
+
     addOperation({
       id: Date.now().toString(),
       type: "CONFIG",
@@ -384,6 +423,7 @@ function SettingsContent() {
       ? { label: "后端未连接", Icon: CircleDashed, className: "bg-amber-500/10 text-amber-600 dark:text-amber-300" }
       : { label: "读取配置中", Icon: CircleDashed, className: "bg-slate-500/10 text-slate-500 dark:text-slate-300" };
   const StatusIcon = statusMeta.Icon;
+  const savingCount = savingLabels.length;
 
   return (
     <div className="relative min-h-screen pb-10">
@@ -409,6 +449,12 @@ function SettingsContent() {
                 <span className="inline-flex items-center gap-2 rounded-full bg-indigo-500/10 px-3 py-2 text-xs font-black text-indigo-600 dark:text-indigo-300">
                   待处理 {operations.length}
                 </span>
+                {savingCount > 0 && (
+                  <span className="inline-flex items-center gap-2 rounded-full bg-sky-500/10 px-3 py-2 text-xs font-black text-sky-600 dark:text-sky-300">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    保存中 {savingCount}
+                  </span>
+                )}
               </div>
             </div>
           </section>
@@ -416,40 +462,63 @@ function SettingsContent() {
           <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[286px_minmax(0,1fr)]">
             <aside className="lg:sticky lg:top-24">
               <nav className="rounded-3xl border border-white/50 bg-white/45 p-3 shadow-xl backdrop-blur-2xl dark:border-slate-800/60 dark:bg-slate-900/45">
-                {SETTINGS_GROUPS.map((group) => (
-                  <section key={group} className="mb-3 last:mb-0">
-                    <p className="px-3 pb-2 pt-1 text-[10px] font-black uppercase tracking-widest text-slate-400">{group}</p>
-                    <div className="grid grid-cols-1 gap-1.5">
-                      {SETTINGS_MENU_ITEMS.filter((item) => item.group === group).map((item) => {
-                        const Icon = item.Icon;
-                        const active = activeTab === item.id;
+                <div className="relative mb-3">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="search"
+                    value={settingsSearch}
+                    onChange={(event) => setSettingsSearch(event.target.value)}
+                    aria-label="搜索设置项"
+                    placeholder="搜索设置"
+                    className="h-10 w-full rounded-2xl border border-slate-200 bg-white/75 pl-9 pr-3 text-sm font-bold text-slate-700 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950/60 dark:text-slate-100"
+                  />
+                </div>
 
-                        return (
-                          <button
-                            key={item.id}
-                            type="button"
-                            onClick={() => setActiveTab(item.id)}
-                            className={`flex min-h-[58px] items-center gap-3 rounded-2xl px-3 py-2 text-left transition-all ${
-                              active
-                                ? "bg-indigo-500 text-white shadow-lg shadow-indigo-500/25"
-                                : "text-slate-700 hover:bg-white/70 dark:text-slate-300 dark:hover:bg-slate-800/70"
-                            }`}
-                          >
-                            <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl ${active ? "bg-white/20" : "bg-slate-100 dark:bg-slate-800"}`}>
-                              <Icon className="h-4 w-4" />
-                            </span>
-                            <span className="min-w-0">
-                              <span className="block truncate text-sm font-black">{item.name}</span>
-                              <span className={`mt-0.5 block truncate text-[11px] font-bold ${active ? "text-white/75" : "text-slate-400"}`}>
-                                {item.summary}
+                {SETTINGS_GROUPS.map((group) => {
+                  const groupItems = visibleSettingsItems.filter((item) => item.group === group);
+                  if (groupItems.length === 0) return null;
+
+                  return (
+                    <section key={group} className="mb-3 last:mb-0">
+                      <p className="px-3 pb-2 pt-1 text-[10px] font-black uppercase tracking-widest text-slate-400">{group}</p>
+                      <div className="grid grid-cols-1 gap-1.5">
+                        {groupItems.map((item) => {
+                          const Icon = item.Icon;
+                          const active = activeTab === item.id;
+
+                          return (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onClick={() => setActiveTab(item.id)}
+                              className={`flex min-h-[58px] items-center gap-3 rounded-2xl px-3 py-2 text-left transition-all ${
+                                active
+                                  ? "bg-indigo-500 text-white shadow-lg shadow-indigo-500/25"
+                                  : "text-slate-700 hover:bg-white/70 dark:text-slate-300 dark:hover:bg-slate-800/70"
+                              }`}
+                            >
+                              <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl ${active ? "bg-white/20" : "bg-slate-100 dark:bg-slate-800"}`}>
+                                <Icon className="h-4 w-4" />
                               </span>
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </section>
-                ))}
+                              <span className="min-w-0">
+                                <span className="block truncate text-sm font-black">{item.name}</span>
+                                <span className={`mt-0.5 block truncate text-[11px] font-bold ${active ? "text-white/75" : "text-slate-400"}`}>
+                                  {item.summary}
+                                </span>
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  );
+                })}
+
+                {visibleSettingsItems.length === 0 && (
+                  <p className="rounded-2xl border border-dashed border-slate-200 px-3 py-5 text-center text-sm font-bold text-slate-400 dark:border-slate-700">
+                    没有匹配的设置项
+                  </p>
+                )}
               </nav>
             </aside>
 
@@ -461,6 +530,7 @@ function SettingsContent() {
                 <div className="min-w-0">
                   <p className="text-[11px] font-black uppercase tracking-widest text-slate-400">{activeItem.group}</p>
                   <h2 className="truncate text-xl font-black text-slate-900 dark:text-white">{activeItem.name}</h2>
+                  <p className="mt-1 truncate text-xs font-bold text-slate-400">{activeItem.summary}</p>
                 </div>
               </div>
 

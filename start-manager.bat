@@ -8,7 +8,8 @@ if not exist "run_me.py" (
 )
 echo ==========================================
 echo   iV0 Blog - Manager
-echo   http://localhost:3001/settings
+echo   Preferred URL: http://localhost:3001/settings
+echo   If that port is busy, the launcher prints the actual URL
 echo   Desktop manager window opens; browser will not open automatically
 echo   Close this window to stop
 echo ==========================================

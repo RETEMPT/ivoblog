@@ -10,6 +10,7 @@ E:\iV0Blogs-main\
   start-blog.bat         # 启动公开博客
   start-manager.bat      # 启动本地管理端
   check-data-sync.bat    # 检查/同步前后端数据文件
+  verify-project.bat     # 端口、残留文件、数据同步与可选构建校检
   ivoblog/
     blog/                # 公开博客前台，部署到 Vercel 或静态站点
     my-blog-manager/     # 本地管理端，包含 Next.js 管理界面和 Python CMS 后端
@@ -31,8 +32,8 @@ E:\iV0Blogs-main\
 在项目第一层目录可以直接双击脚本：
 
 ```text
-start-blog.bat      # http://127.0.0.1:3000
-start-manager.bat   # http://127.0.0.1:3001/settings，后端 http://127.0.0.1:52560
+start-blog.bat      # 优先 http://127.0.0.1:3000，占用时自动使用 3020-3039
+start-manager.bat   # 优先 http://127.0.0.1:3001/settings，后端优先 http://127.0.0.1:52560，占用时按启动日志为准
 ```
 
 也可以手动启动公开博客：
@@ -75,6 +76,7 @@ cd E:\iV0Blogs-main
 每轮代码或内容同步改动后，建议按顺序运行验证。注意：在 Windows 下，Next/Turbopack 的 `next build` 请在各自项目目录里直接运行，不要用根目录脚本、`cmd &&` 链或嵌套 npm 编排。
 
 ```powershell
+.\verify-project.bat
 node ivoblog\scripts\check-data-sync.mjs
 
 cd E:\iV0Blogs-main\ivoblog\blog
@@ -86,6 +88,16 @@ cd E:\iV0Blogs-main\ivoblog\my-blog-manager
 npm run build
 npm run lint
 npm run typecheck
+```
+
+`.\verify-project.bat --full` 会追加运行双端 `lint` 和 `typecheck`。在普通本机终端里也会运行双端 `build`；如果处于 Codex 沙箱并看到 build 被跳过，请按上面的项目目录直接运行 `npm.cmd run build`。
+
+常用增强检查：
+
+```powershell
+.\verify-project.bat --smoke          # 启动临时 dev server，检查关键页面是否能渲染
+.\verify-project.bat --verbose-assets # 展开列出未被文本引用的 uploads 资源候选，只报告不删除
+.\verify-project.bat --fix            # 清理已确认的运行态/残留文件
 ```
 
 这样会检查管理端与公开博客数据镜像、两个 Next.js 应用的生产构建、lint 和 TypeScript 类型。
@@ -276,13 +288,13 @@ git push
 http://127.0.0.1:52560/api/status
 ```
 
-如果启动窗口出现 `Another next dev server is already running`，说明上一次管理端前端进程还残留在 3001/3002/3003 一类端口上。当前启动器会先清理这些管理端端口再启动；如果仍失败，按日志里的 PID 执行：
+如果首选端口被占用，当前启动器会自动选择可用端口，并在启动窗口打印实际 URL；不会清理或误杀占用端口的其它进程。若怀疑有残留状态，先运行：
 
 ```powershell
-taskkill /PID <PID> /F /T
+.\verify-project.bat --fix
 ```
 
-再重新运行顶层 `start-manager.bat`。C 线同步、封面上传、配置读取都依赖这个 Python 后端；`52560/api/status` 打不开时，先不要排查 VPS。
+再重新运行顶层 `start-manager.bat`。C 线同步、封面上传、配置读取都依赖这个 Python 后端；如果启动日志中的 `/api/status` 打不开，先不要排查 VPS。
 
 ### C 线同步到 VPS 失败
 

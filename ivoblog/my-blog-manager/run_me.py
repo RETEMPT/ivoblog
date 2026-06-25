@@ -16,12 +16,16 @@ PYTHON_PACKAGES = {
 }
 
 
+def npm_cmd() -> str:
+    return "npm.cmd" if os.name == "nt" else "npm"
+
+
 def check_node_environment():
     print("[check] Node.js dependencies...")
     if not os.path.exists("node_modules"):
         print("[setup] node_modules not found, running npm install...")
         try:
-            subprocess.check_call(["npm", "install"], shell=True)
+            subprocess.check_call([npm_cmd(), "install"])
         except Exception as exc:
             print(f"[error] npm install failed: {exc}")
             return False
